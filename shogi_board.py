@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import simpledialog, messagebox
+import copy
 
 class ShogiBoard(tk.Frame):
     def __init__(self, master=None):
@@ -11,24 +12,34 @@ class ShogiBoard(tk.Frame):
         self.selected_entity = None # Can be a board position (r, c) or a captured piece ('piece_name', player)
         self.captured_pieces = {1: [], 2: []}  # Captured pieces for Player 1 and 2
         self.current_player = 1 # Start with player 1
+        self.history = []
+
+        self.PROMOTION_MAP = {
+            '歩': 'と', '香': '成香', '桂': '成桂', '銀': '全',
+            '角': '馬', '飛': '龍'
+        }
+        self.DEMOTION_MAP = {v: k for k, v in self.PROMOTION_MAP.items()}
+        self.PROMOTED_PIECES = set(self.PROMOTION_MAP.values())
 
         # Define piece movements
+        gold_moves = {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1}
         self.PIECE_MOVES = {
             '歩': {'moves': [(-1, 0)], 'range': 1},
             '香': {'moves': [(-1, 0)], 'range': 8},
             '桂': {'moves': [(-2, -1), (-2, 1)], 'range': 1},
             '銀': {'moves': [(-1, 0), (-1, -1), (-1, 1), (1, -1), (1, 1)], 'range': 1},
-            '金': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1},
+            '金': gold_moves,
             '角': {'moves': [(-1, -1), (-1, 1), (1, -1), (1, 1)], 'range': 8},
             '飛': {'moves': [(-1, 0), (1, 0), (0, -1), (0, 1)], 'range': 8},
             '玉': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0), (1, -1), (1, 1)], 'range': 1},
             '王': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0), (1, -1), (1, 1)], 'range': 1},
-            '成歩': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1},
-            '成香': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1},
-            '成桂': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1},
-            '成銀': {'moves': [(-1, 0), (-1, -1), (-1, 1), (0, -1), (0, 1), (1, 0)], 'range': 1},
-            '成角': {'moves': [(-1, -1), (-1, 1), (1, -1), (1, 1)], 'range': 8, 'plus': [(-1, 0), (1, 0), (0, -1), (0, 1)]}, # plus is for 1-step moves
-            '成飛': {'moves': [(-1, 0), (1, 0), (0, -1), (0, 1)], 'range': 8, 'plus': [(-1, -1), (-1, 1), (1, -1), (1, 1)]},
+            # Promoted pieces
+            'と': gold_moves,
+            '成香': gold_moves,
+            '成桂': gold_moves,
+            '全': gold_moves,
+            '馬': {'moves': [(-1, -1), (-1, 1), (1, -1), (1, 1)], 'range': 8, 'plus': [(-1, 0), (1, 0), (0, -1), (0, 1)]},
+            '龍': {'moves': [(-1, 0), (1, 0), (0, -1), (0, 1)], 'range': 8, 'plus': [(-1, -1), (-1, 1), (1, -1), (1, 1)]},
         }
 
         self.create_widgets()
@@ -50,6 +61,12 @@ class ShogiBoard(tk.Frame):
         self.komadai1 = tk.Canvas(main_frame, width=120, height=230, bg="wheat")
         self.komadai1.grid(row=1, column=1, padx=5)
         self.komadai1.bind("<Button-1>", lambda e: self.handle_komadai_click(e, 1))
+
+        # Control buttons
+        control_frame = tk.Frame(self.master)
+        control_frame.pack(pady=5)
+        undo_button = tk.Button(control_frame, text="待った", command=self.undo_move)
+        undo_button.pack()
 
 
         self.draw_board()
@@ -107,6 +124,12 @@ class ShogiBoard(tk.Frame):
 
     def setup_pieces(self):
         """Sets up the initial board state with piece objects."""
+        # Reset history for a new game
+        self.history = []
+        self.board_state = [[None for _ in range(9)] for _ in range(9)]
+        self.captured_pieces = {1: [], 2: []}
+        self.current_player = 1
+
         initial_placement = {
             (0, 0): {"piece": "香", "player": 2}, (0, 1): {"piece": "桂", "player": 2},
             (0, 2): {"piece": "銀", "player": 2}, (0, 3): {"piece": "金", "player": 2},
@@ -134,6 +157,8 @@ class ShogiBoard(tk.Frame):
         }
         for (row, col), piece_data in initial_placement.items():
             self.board_state[row][col] = piece_data
+
+        self.save_state_to_history()
         self.draw_board()
 
 
@@ -226,25 +251,19 @@ class ShogiBoard(tk.Frame):
 
         if target_piece:
             captured_piece_name = target_piece["piece"]
-            if captured_piece_name.startswith("成"):
-                captured_piece_name = captured_piece_name[-1]
+            if captured_piece_name in self.PROMOTED_PIECES:
+                captured_piece_name = self.DEMOTION_MAP[captured_piece_name]
             self.captured_pieces[moving_player].append(captured_piece_name)
 
         # Promotion logic
         if self.can_promote(piece_to_move, start_row, end_row):
             if messagebox.askyesno("昇格", "駒を成りますか？"):
-                promoted_piece_name = "成" + piece_to_move["piece"]
-                if piece_to_move["piece"] in "角飛":
-                    promoted_piece_name = "成" + piece_to_move["piece"] # e.g., 成角
-                elif piece_to_move["piece"] in "歩香桂銀":
-                    promoted_piece_name = "成" + piece_to_move["piece"] # e.g., 成歩
+                promoted_piece_name = self.PROMOTION_MAP.get(piece_to_move["piece"])
+                if promoted_piece_name:
+                    piece_to_move["piece"] = promoted_piece_name
 
-                # Check if the promoted name exists, otherwise use a generic one (or handle error)
-                if promoted_piece_name in self.PIECE_MOVES:
-                     piece_to_move["piece"] = promoted_piece_name
-                elif "金" in self.PIECE_MOVES[piece_to_move["piece"]].get("promote_to", ""):
-                     piece_to_move["piece"] = "金" # 銀、桂、香、歩 can promote to 金 equivalent
 
+        self.save_state_to_history()
         self.board_state[end_row][end_col] = piece_to_move
         self.board_state[start_row][start_col] = None
         self.current_player = 3 - self.current_player
@@ -253,7 +272,7 @@ class ShogiBoard(tk.Frame):
         player = piece["player"]
         piece_type = piece["piece"]
 
-        if "成" in piece_type: # Already promoted
+        if piece_type in self.PROMOTED_PIECES: # Already promoted
             return False
 
         promotion_zone_start = 0
@@ -327,6 +346,7 @@ class ShogiBoard(tk.Frame):
             messagebox.showerror("反則手", "その場所には駒を打てません。")
             return
 
+        self.save_state_to_history()
         self.captured_pieces[player].pop(piece_info["index"])
         self.board_state[row][col] = {"piece": piece_name, "player": player}
         self.current_player = 3 - self.current_player
@@ -358,6 +378,26 @@ class ShogiBoard(tk.Frame):
         # Rule 4: Uchifuzume (Pawn drop checkmate) is not implemented due to complexity.
 
         return True
+
+    def save_state_to_history(self):
+        """Saves the current game state to the history."""
+        state = {
+            "board_state": copy.deepcopy(self.board_state),
+            "captured_pieces": copy.deepcopy(self.captured_pieces),
+            "current_player": self.current_player
+        }
+        self.history.append(state)
+
+    def undo_move(self):
+        """Reverts to the previous game state."""
+        if len(self.history) > 1:
+            self.history.pop() # Remove current state
+            last_state = self.history[-1]
+            self.board_state = copy.deepcopy(last_state["board_state"])
+            self.captured_pieces = copy.deepcopy(last_state["captured_pieces"])
+            self.current_player = last_state["current_player"]
+            self.selected_entity = None
+            self.draw_board()
 
 
 if __name__ == "__main__":
