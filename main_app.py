@@ -83,6 +83,22 @@ class BackupApp(tk.Tk):
         self.start_button = ttk.Button(backup_frame, text="Start Backup", command=self.start_backup)
         self.start_button.pack(side=tk.RIGHT, padx=5)
 
+        # --- 復元フレーム ---
+        restore_frame = ttk.LabelFrame(main_frame, text="Restore from Backup", padding="10")
+        restore_frame.pack(fill=tk.X, pady=5)
+
+        self.restore_path = tk.StringVar()
+        restore_path_entry = ttk.Entry(restore_frame, textvariable=self.restore_path, width=50)
+        restore_path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5,0))
+        restore_path_entry.insert(0, "Enter restore path here")
+
+        restore_browse_button = ttk.Button(restore_frame, text="Browse...", command=self.browse_restore_folder)
+        restore_browse_button.pack(side=tk.LEFT, padx=5)
+
+        self.restore_button = ttk.Button(restore_frame, text="Start Restore", command=self.start_restore)
+        self.restore_button.pack(side=tk.RIGHT, padx=5)
+
+
         progress_frame = ttk.Frame(main_frame, padding=(0, 5))
         progress_frame.pack(fill=tk.X, side=tk.BOTTOM)
 
@@ -96,6 +112,10 @@ class BackupApp(tk.Tk):
     def browse_folder(self):
         folder = filedialog.askdirectory()
         if folder: self.backup_path.set(folder)
+
+    def browse_restore_folder(self):
+        folder = filedialog.askdirectory()
+        if folder: self.restore_path.set(folder)
 
     def start_threaded_task(self, task, *args):
         self.status_label.config(text="Processing...")
@@ -148,6 +168,24 @@ class BackupApp(tk.Tk):
         except be.BackupError as e:
             self.queue.put(("error", str(e)))
 
+    def start_restore(self):
+        path = self.restore_path.get()
+        if not path or path == "Enter restore path here":
+            messagebox.showwarning("Warning", "Please select a restore source folder.")
+            return
+
+        if messagebox.askyesno("Confirm Restore",
+                                "WARNING: This will overwrite data on your iPad. "
+                                "Are you sure you want to proceed?"):
+            self.restore_button.config(state=tk.DISABLED)
+            self.start_threaded_task(self._start_restore_worker, path)
+
+    def _start_restore_worker(self, path):
+        try:
+            be.start_restore(path, self.update_progress)
+        except be.BackupError as e:
+            self.queue.put(("error", str(e)))
+
     def update_progress(self, progress, message):
         self.queue.put(("progress", (progress, message)))
 
@@ -169,12 +207,14 @@ class BackupApp(tk.Tk):
                     self.status_label.config(text=message)
                     if progress == 100:
                         self.start_button.config(state=tk.NORMAL)
+                        self.restore_button.config(state=tk.NORMAL)
                         if "successfully" in message.lower():
                             messagebox.showinfo("Success", message)
                 elif msg_type == "error":
                     self.status_label.config(text=f"Error: {data}")
                     messagebox.showerror("Error", data)
                     self.start_button.config(state=tk.NORMAL)
+                    self.restore_button.config(state=tk.NORMAL)
         except queue.Empty:
             pass
         finally:

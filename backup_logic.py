@@ -78,6 +78,31 @@ def start_backup(backup_path: str, progress_callback: Callable[[int, str], None]
             raise BackupError("iPadが接続されていません。バックアップを開始できません。")
         raise BackupError(f"バックアップ中にエラーが発生しました: {e}")
 
+def start_restore(backup_path: str, progress_callback: Callable[[int, str], None]):
+    """
+    指定されたバックアップデータからデバイスを復元する。
+    """
+    if not PYMOBILEDEVICE3_AVAILABLE:
+        raise BackupError("pymobiledevice3ライブラリが利用できません。")
+    if not os.path.isdir(backup_path):
+        raise BackupError(f"指定されたバックアップパスが見つかりません: {backup_path}")
+
+    try:
+        with MobileBackup2Service() as backup_service:
+            progress_callback(10, "復元サービスを開始しています...")
+            # restoreメソッドを呼び出す。進捗の詳細は不明なため、主要なステップでコールバックを呼ぶ
+            backup_service.restore(backup_path)
+            progress_callback(90, "ファイルの復元を完了し、デバイスを再起動しています...")
+            # 実際の復元はデバイスの再起動を伴うことが多い
+            time.sleep(5) # ダミーの待機
+            progress_callback(100, "復元が正常に完了しました。")
+
+    except (NoDeviceConnectedError, PyMobileDevice3Exception) as e:
+        if isinstance(e, NoDeviceConnectedError):
+            raise BackupError("iPadが接続されていません。復元を開始できません。")
+        raise BackupError(f"復元中にエラーが発生しました: {e}")
+
+
 if __name__ == '__main__':
     print("--- バックエンドロジック テスト ---")
     if not PYMOBILEDEVICE3_AVAILABLE:
