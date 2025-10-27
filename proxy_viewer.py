@@ -34,14 +34,8 @@ class ProxyViewer(tk.Tk):
     def process_queue(self):
         try:
             msg = self.queue.get_nowait()
-            # To avoid flooding the text area with status updates,
-            # we can check if the message is a status message or the final content.
-            if "..." in msg or "failed" in msg or "error" in msg:
-                self.text_area.delete(1.0, tk.END)
-                self.text_area.insert(tk.END, msg)
-            else:
-                self.text_area.delete(1.0, tk.END)
-                self.text_area.insert(tk.END, msg)
+            self.text_area.delete(1.0, tk.END)
+            self.text_area.insert(tk.END, msg)
         except queue.Empty:
             pass
         self.after(100, self.process_queue)
@@ -52,7 +46,7 @@ class ProxyViewer(tk.Tk):
             self.queue.put("Please enter a URL.")
             return
 
-        self.queue.put("Fetching proxy list...")
+        self.queue.put("Fetching proxy list from multiple sources...")
         thread = threading.Thread(target=self.fetch_content_thread, args=(url,))
         thread.start()
 
@@ -61,11 +55,11 @@ class ProxyViewer(tk.Tk):
         try:
             proxies = self.get_free_proxies()
         except Exception as e:
-            self.queue.put(f"Failed to fetch proxy list: {e}")
+            self.queue.put(f"Failed to fetch proxy lists: {e}")
             return
 
         if not proxies:
-            self.queue.put("No working proxies found. Please try again later.")
+            self.queue.put("No working proxies could be found from any source. Please try again later.")
             return
 
         random.shuffle(proxies)
@@ -74,13 +68,11 @@ class ProxyViewer(tk.Tk):
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
 
-        for i, proxy in enumerate(proxies[:20]): # Try up to 20 proxies
-            self.queue.put(f"Trying proxy {i+1}/20: {proxy}...")
+        max_proxies_to_try = 20
+        for i, proxy in enumerate(proxies[:max_proxies_to_try]):
+            self.queue.put(f"Trying proxy {i+1}/{max_proxies_to_try}: {proxy}...")
             try:
-                proxy_dict = {
-                    "http": f"http://{proxy}",
-                    "https": f"http://{proxy}",
-                }
+                proxy_dict = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
                 response = requests.get(url, headers=headers, proxies=proxy_dict, timeout=10)
                 response.raise_for_status()
 
@@ -93,27 +85,62 @@ class ProxyViewer(tk.Tk):
                 else:
                     self.queue.put(soup.get_text(separator='\\n', strip=True))
                 return
-
-            except (requests.exceptions.ProxyError, requests.exceptions.Timeout, requests.exceptions.RequestException):
+            except Exception:
                 continue
 
-        self.queue.put("All tried proxies failed. The website might be down or blocking all proxies.")
+        self.queue.put("All tried proxies failed. The website might be down or blocking all available proxies.")
 
     def get_free_proxies(self):
+        """Fetches proxies from multiple sources and returns a combined list."""
+        all_proxies = []
+
+        # We can run these in threads to make it faster, but for simplicity, we do it sequentially.
+        source_funcs = [self.get_proxies_from_geonode, self.get_proxies_from_freeproxylist]
+
+        for func in source_funcs:
+            try:
+                all_proxies.extend(func())
+            except Exception:
+                # If one source fails, we can continue to the next.
+                continue
+
+        return list(set(all_proxies)) # Return unique proxies
+
+    def get_proxies_from_geonode(self):
         url = "https://geonode.com/free-proxy-list"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser")
         proxies = []
         table = soup.find("table")
-        if not table:
-            return []
+        if not table: return []
         for row in table.find_all("tr")[1:]:
             try:
                 tds = row.find_all("td")
                 ip = tds[0].text.strip()
                 port = tds[1].text.strip()
                 if ip and port.isdigit():
+                    proxies.append(f"{ip}:{port}")
+            except (IndexError, AttributeError):
+                continue
+        return proxies
+
+    def get_proxies_from_freeproxylist(self):
+        url = "https://free-proxy-list.net/"
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.content, "html.parser")
+        proxies = []
+        table = soup.find("table", attrs={"class": "table-striped"})
+        if not table: return []
+        for row in table.find("tbody").find_all("tr"):
+            try:
+                tds = row.find_all("td")
+                ip = tds[0].text.strip()
+                port = tds[1].text.strip()
+                is_https = tds[6].text.strip().lower() == 'yes'
+                if ip and port.isdigit() and is_https:
                     proxies.append(f"{ip}:{port}")
             except (IndexError, AttributeError):
                 continue
