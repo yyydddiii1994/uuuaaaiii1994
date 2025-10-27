@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import scrolledtext
+from tkhtmlview import HTMLScrolledText
 import requests
 from bs4 import BeautifulSoup
 import random
@@ -25,7 +25,7 @@ class ProxyViewer(tk.Tk):
         self.fetch_button = tk.Button(self.url_frame, text="Fetch", command=self.fetch_content)
         self.fetch_button.pack(side=tk.LEFT, padx=5)
 
-        self.text_area = scrolledtext.ScrolledText(self, wrap=tk.WORD)
+        self.text_area = HTMLScrolledText(self, wrap=tk.WORD)
         self.text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
         self.queue = queue.Queue()
@@ -33,9 +33,11 @@ class ProxyViewer(tk.Tk):
 
     def process_queue(self):
         try:
-            msg = self.queue.get_nowait()
-            self.text_area.delete(1.0, tk.END)
-            self.text_area.insert(tk.END, msg)
+            msg_type, content = self.queue.get_nowait()
+            if msg_type == "status":
+                self.text_area.set_html(f"<i>{content}</i>")
+            elif msg_type == "content":
+                self.text_area.set_html(content)
         except queue.Empty:
             pass
         self.after(100, self.process_queue)
@@ -43,10 +45,10 @@ class ProxyViewer(tk.Tk):
     def fetch_content(self):
         url = self.url_entry.get()
         if not url:
-            self.queue.put("Please enter a URL.")
+            self.queue.put(("status", "Please enter a URL."))
             return
 
-        self.queue.put("Fetching proxy list from multiple sources...")
+        self.queue.put(("status", "Fetching proxy list from multiple sources..."))
         thread = threading.Thread(target=self.fetch_content_thread, args=(url,))
         thread.start()
 
@@ -55,11 +57,11 @@ class ProxyViewer(tk.Tk):
         try:
             proxies = self.get_free_proxies()
         except Exception as e:
-            self.queue.put(f"Failed to fetch proxy lists: {e}")
+            self.queue.put(("status", f"Failed to fetch proxy lists: {e}"))
             return
 
         if not proxies:
-            self.queue.put("No working proxies could be found from any source. Please try again later.")
+            self.queue.put(("status", "No working proxies could be found from any source. Please try again later."))
             return
 
         random.shuffle(proxies)
@@ -70,7 +72,7 @@ class ProxyViewer(tk.Tk):
 
         max_proxies_to_try = 20
         for i, proxy in enumerate(proxies[:max_proxies_to_try]):
-            self.queue.put(f"Trying proxy {i+1}/{max_proxies_to_try}: {proxy}...")
+            self.queue.put(("status", f"Trying proxy {i+1}/{max_proxies_to_try}: {proxy}..."))
             try:
                 proxy_dict = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
                 response = requests.get(url, headers=headers, proxies=proxy_dict, timeout=10)
@@ -80,15 +82,14 @@ class ProxyViewer(tk.Tk):
                 main_content = soup.find('div', id='wikibody')
 
                 if main_content:
-                    content_text = main_content.get_text(separator='\\n', strip=True)
-                    self.queue.put(content_text)
+                    self.queue.put(("content", str(main_content)))
                 else:
-                    self.queue.put(soup.get_text(separator='\\n', strip=True))
+                    self.queue.put(("content", response.text))
                 return
             except Exception:
                 continue
 
-        self.queue.put("All tried proxies failed. The website might be down or blocking all available proxies.")
+        self.queue.put(("status", "All tried proxies failed. The website might be down or blocking all available proxies."))
 
     def get_free_proxies(self):
         """Fetches proxies from multiple sources and returns a combined list."""
