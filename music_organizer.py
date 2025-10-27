@@ -15,6 +15,17 @@ except ImportError:
     root.destroy()
     exit()
 
+def fix_mojibake(text):
+    """
+    Shift_JISが誤ってデコードされたことによる典型的な文字化けを修正する。
+    例: 'à¸¿à¸à¸' -> 'テスト'
+    """
+    try:
+        # Shift_JIS -> Latin-1 (誤認識) -> Shift_JIS (再解釈) のパターンを試す
+        return text.encode('latin-1').decode('shift_jis')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # 上記のパターンでなければ、元のテキストを返す
+        return text
 
 class MusicOrganizerApp(tk.Tk):
     SUPPORTED_EXTENSIONS = ('.mp3', '.wav', '.m4a', '.mp4', '.flac')
@@ -153,11 +164,13 @@ class MusicOrganizerApp(tk.Tk):
             if not audio:
                 self.queue.put(("file_found", (file_path, "不明", "不明", "不明", "", os.path.basename(file_path), "")))
                 return
-            genre = audio.get('genre', ['不明'])[0]
-            artist = audio.get('artist', ['不明'])[0]
-            album = audio.get('album', ['不明'])[0]
-            title = audio.get('title', [os.path.splitext(os.path.basename(file_path))[0]])[0]
+
+            genre = fix_mojibake(audio.get('genre', ['不明'])[0])
+            artist = fix_mojibake(audio.get('artist', ['不明'])[0])
+            album = fix_mojibake(audio.get('album', ['不明'])[0])
+            title = fix_mojibake(audio.get('title', [os.path.splitext(os.path.basename(file_path))[0]])[0])
             track = audio.get('tracknumber', [''])[0].split('/')[0]
+
             self.queue.put(("file_found", (file_path, genre, artist, album, track, title, "")))
         except Exception as e:
             self.queue.put(("error", f"メタデータ読み取りエラー: {os.path.basename(file_path)} - {e}"))
