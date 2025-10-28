@@ -1,198 +1,130 @@
-# main.py
 import streamlit as st
-import requests
-import time
-import hashlib
-import hmac
-import json
 import sqlite3
+import json
 import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-from datetime import datetime
-from contextlib import contextmanager
+import random
 
-# 設定ファイル（config/real_settings.pyから読み込み）
-try:
-    from config.real_settings import *
-except ImportError:
-    st.error("設定ファイルが見つかりません。config/real_settings.pyを作成してください")
-    st.stop()
+# --- データベース関連の関数 ---
 
-# 基本設定
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
-EXCHANGE_API_URL = "https://api.binance.com/api/v3"
+def get_db_connection():
+    """データベースへの接続を取得する"""
+    conn = sqlite3.connect('quiz.db')
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# ログ管理システム
-class TradingLogger:
-    def __init__(self, db_name="trading_logs.db"):
-        self.db_name = db_name
-        self._init_db()
+def get_all_categories():
+    """データベースからすべてのユニークなカテゴリを取得する"""
+    conn = get_db_connection()
+    categories = conn.execute('SELECT DISTINCT category FROM questions').fetchall()
+    conn.close()
+    return [c['category'] for c in categories]
 
-    def _init_db(self):
-        with self._get_connection() as conn:
-            conn.execute('''CREATE TABLE IF NOT EXISTS trade_logs
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          timestamp DATETIME,
-                          symbol TEXT,
-                          action TEXT,
-                          quantity REAL,
-                          price REAL,
-                          reason TEXT)''')
-            conn.execute('''CREATE TABLE IF NOT EXISTS error_logs
-                         (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                          timestamp DATETIME,
-                          error_type TEXT,
-                          message TEXT)''')
+def get_questions(categories=None):
+    """指定されたカテゴリの問題を取得する (指定がなければ全問題)"""
+    conn = get_db_connection()
+    query = 'SELECT * FROM questions'
+    if categories:
+        placeholders = ','.join('?' for _ in categories)
+        query += f' WHERE category IN ({placeholders})'
+        questions = conn.execute(query, categories).fetchall()
+    else:
+        questions = conn.execute(query).fetchall()
+    conn.close()
+    return questions
 
-    @contextmanager
-    def _get_connection(self):
-        conn = sqlite3.connect(self.db_name)
-        try:
-            yield conn
-        finally:
-            conn.close()
+# --- Streamlitアプリのメイン部分 ---
 
-    def log_trade(self, symbol, action, quantity, price=None, reason=""):
-        with self._get_connection() as conn:
-            conn.execute('''INSERT INTO trade_logs 
-                         (timestamp, symbol, action, quantity, price, reason)
-                         VALUES (?, ?, ?, ?, ?, ?)''',
-                         (datetime.now(), symbol, action, quantity, price, reason))
-
-    def log_error(self, error_type, message):
-        with self._get_connection() as conn:
-            conn.execute('''INSERT INTO error_logs 
-                         (timestamp, error_type, message)
-                         VALUES (?, ?, ?)''',
-                         (datetime.now(), error_type, message))
-
-# リスク管理システム
-class RiskManager:
-    def __init__(self, logger):
-        self.logger = logger
-        self.risk_params = {
-            'max_loss': 0.02,
-            'max_trade': 0.1,
-            'cooling': 5
-        }
-        self.last_trade = {}
-
-    def check_risk(self, symbol, quantity):
-        try:
-            if time.time() - self.last_trade.get(symbol, 0) < self.risk_params['cooling'] * 60:
-                st.error("クーリング期間中です")
-                return False
-            return True
-        except Exception as e:
-            self.logger.log_error("RiskError", str(e))
-            return False
-
-# 取引システム
-class TradingSystem:
-    def __init__(self):
-        self.logger = TradingLogger()
-        self.risk_manager = RiskManager(self.logger)
-        self.session = requests.Session()
-        self.session.headers.update({"X-MBX-APIKEY": EXCHANGE_API['API_KEY']})
-
-    def get_signature(self, params):
-        query = '&'.join([f"{k}={v}" for k, v in sorted(params.items())])
-        return hmac.new(
-            EXCHANGE_API['API_SECRET'].encode(),
-            query.encode(),
-            hashlib.sha256
-        ).hexdigest()
-
-    def get_price(self, symbol):
-        try:
-            params = {"symbol": symbol, "timestamp": int(time.time()*1000)}
-            params["signature"] = self.get_signature(params)
-            response = self.session.get(f"{EXCHANGE_API_URL}/ticker/price", params=params)
-            return float(response.json()['price'])
-        except Exception as e:
-            self.logger.log_error("PriceError", str(e))
-            return None
-
-    def execute_trade(self, symbol, action, quantity):
-        try:
-            if not self.risk_manager.check_risk(symbol, quantity):
-                return None
-
-            price = self.get_price(symbol)
-            if not price:
-                return None
-
-            params = {
-                "symbol": symbol,
-                "side": action.upper(),
-                "type": "MARKET",
-                "quantity": round(quantity, 3),
-                "timestamp": int(time.time()*1000)
-            }
-            params["signature"] = self.get_signature(params)
-
-            response = self.session.post(
-                f"{EXCHANGE_API_URL}/order",
-                params=params
-            )
-            result = response.json()
-
-            self.logger.log_trade(
-                symbol=symbol,
-                action=action,
-                quantity=quantity,
-                price=price,
-                reason="自動取引"
-            )
-            self.risk_manager.last_trade[symbol] = time.time()
-            return result
-        except Exception as e:
-            self.logger.log_error("TradeError", str(e))
-            return None
-
-# UI設定
 def main():
-    st.set_page_config(page_title="Auto Trader", layout="wide")
-    st.title("🤖 自動取引システム")
+    st.title("公認会計士 財務会計理論クイズ")
 
-    if 'system' not in st.session_state:
-        st.session_state.system = TradingSystem()
-
+    # --- サイドバー ---
     with st.sidebar:
         st.header("設定")
-        symbol = st.selectbox("通貨ペア", ["BTCUSDT", "ETHUSDT", "BNBUSDT"])
-        quantity = st.number_input("数量", min_value=0.001, step=0.001, value=0.01)
-        interval = st.number_input("更新間隔（秒）", 10, 3600, 60)
+        all_categories = get_all_categories()
+        selected_categories = st.multiselect("学習したいカテゴリを選択してください:", all_categories, default=all_categories)
 
-    col1, col2 = st.columns([3, 2])
-
-    with col1:
-        st.subheader("取引実行")
-        if st.button("即時取引テスト"):
-            result = st.session_state.system.execute_trade(symbol, "BUY", quantity)
-            if result:
-                st.success("取引成功")
+        if st.button("クイズを開始/リセット"):
+            # セッション状態をリセット
+            st.session_state.questions = get_questions(selected_categories)
+            if not st.session_state.questions:
+                 st.session_state.error = "選択されたカテゴリの問題が見つかりません。"
             else:
-                st.error("取引失敗")
+                st.session_state.error = None
+                st.session_state.question_indices = list(range(len(st.session_state.questions)))
+                random.shuffle(st.session_state.question_indices)
+                st.session_state.current_question_index_pos = 0
+                st.session_state.score = 0
+                st.session_state.answered = False
+                st.session_state.results = [] # 結果を保存するリスト
+            st.experimental_rerun()
 
-        st.subheader("価格表示")
-        price_placeholder = st.empty()
+    # --- メインコンテンツ ---
+    if 'error' in st.session_state and st.session_state.error:
+        st.error(st.session_state.error)
+        return
 
-    with col2:
-        st.subheader("取引履歴")
-        with sqlite3.connect("trading_logs.db") as conn:
-            df = pd.read_sql("SELECT * FROM trade_logs ORDER BY timestamp DESC LIMIT 10", conn)
+    if 'questions' not in st.session_state or not st.session_state.questions:
+        st.info("サイドバーでカテゴリを選択し、「クイズを開始/リセット」ボタンを押してください。")
+        return
+
+    # --- クイズの進行管理 ---
+    total_questions = len(st.session_state.question_indices)
+
+    if st.session_state.current_question_index_pos >= total_questions:
+        st.header("クイズ終了！")
+        st.write(f"お疲れ様でした。あなたのスコアは {st.session_state.score} / {total_questions} です。")
+
+        # 結果をDataFrameで表示
+        if st.session_state.results:
+            df = pd.DataFrame(st.session_state.results)
+            st.subheader("結果の詳細")
             st.dataframe(df)
+        return
 
-    # 自動更新ループ
-    while True:
-        try:
-            price = st.session_state.system.get_price(symbol)
-            price_placeholder.metric(f"現在の価格 ({symbol})", f"{price:,.2f} USD")
-            time.sleep(interval)
-        except:
-            pass
+    # 現在の問題を取得
+    q_idx = st.session_state.question_indices[st.session_state.current_question_index_pos]
+    question = st.session_state.questions[q_idx]
+
+    question_text = question['question']
+    options = json.loads(question['options'])
+    answer = question['answer']
+    explanation = question['explanation']
+
+    st.header(f"問題 {st.session_state.current_question_index_pos + 1}/{total_questions}")
+    st.write(f"【カテゴリ】: {question['category']}")
+    st.markdown(f"**{question_text}**")
+
+    # 回答の選択肢
+    user_answer = st.radio("選択肢:", options, key=f"q_{q_idx}")
+
+    # --- 回答ボタンと次の問題へボタン ---
+    if not st.session_state.answered:
+        if st.button("回答する", key=f"submit_{q_idx}"):
+            is_correct = user_answer == answer
+            st.session_state.answered = True
+
+            # 結果を保存
+            st.session_state.results.append({
+                '問題': question_text,
+                'あなたの回答': user_answer,
+                '正解': answer,
+                '結果': '正解' if is_correct else '不正解'
+            })
+
+            if is_correct:
+                st.success("正解！ 🎉")
+                st.session_state.score += 1
+            else:
+                st.error(f"不正解... 😢 正解は「{answer}」です。")
+
+            st.info("【解説】")
+            st.write(explanation)
+            st.experimental_rerun()
+    else:
+        if st.button("次の問題へ", key=f"next_{q_idx}"):
+            st.session_state.current_question_index_pos += 1
+            st.session_state.answered = False
+            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()

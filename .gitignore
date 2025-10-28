@@ -1,0 +1,16 @@
+# Database files
+*.db
+*.sqlite3
+
+# Log files
+*.log
+
+# IDE/Editor specific files
+.vscode/
+.idea/
+
+# Python specific files
+__pycache__/
+*.pyc
+venv/
+.env
