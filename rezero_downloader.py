@@ -11,6 +11,7 @@ import random
 
 class RezeroDownloaderApp:
     BASE_URL = "https://ncode.syosetu.com"
+    API_URL = "https://api.syosetu.com/novelapi/api/"
     NOVEL_ID = "n2267be"
     HEADERS = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/5.0 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36',
@@ -18,13 +19,13 @@ class RezeroDownloaderApp:
         'Accept-Encoding': 'gzip, deflate, br',
         'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
         'Connection': 'keep-alive',
-        'Referer': f'https://ncode.syosetu.com/n2267be/',
+        'Referer': f'https://ncode.syosetu.com/{NOVEL_ID}/',
         'Upgrade-Insecure-Requests': '1'
     }
 
     def __init__(self, root):
         self.root = root
-        self.root.title("リゼロダウンローダー")
+        self.root.title("リゼロダウンローダー (API版)")
         self.root.geometry("700x500")
 
         control_frame = ttk.Frame(self.root, padding="10")
@@ -61,6 +62,24 @@ class RezeroDownloaderApp:
         download_thread.daemon = True
         download_thread.start()
 
+    def get_chapter_info_from_api(self):
+        self.log("なろう小説APIから作品情報を取得中...")
+        params = {"ncode": self.NOVEL_ID, "out": "json", "of": "ga"}
+        try:
+            response = requests.get(self.API_URL, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            if len(data) > 1 and "general_all_no" in data[1]:
+                total_chapters = data[1]["general_all_no"]
+                self.log(f"APIから総話数を取得しました: {total_chapters} 話")
+                return total_chapters
+            else:
+                self.log("APIレスポンスが不正です。")
+                return None
+        except requests.RequestException as e:
+            self.log(f"APIからの情報取得に失敗: {e}")
+            return None
+
     def get_proxies_from_geonode(self):
         try:
             self.log("geonode.comからプロキシを取得中...")
@@ -68,131 +87,84 @@ class RezeroDownloaderApp:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
-            proxies = []
-            table = soup.find("table")
-            if not table: return []
-            for row in table.find_all("tr")[1:]:
-                try:
-                    tds = row.find_all("td")
-                    ip = tds[0].text.strip()
-                    port = tds[1].text.strip()
-                    if ip and port.isdigit():
-                        proxies.append(f"{ip}:{port}")
-                except (IndexError, AttributeError):
-                    continue
+            proxies = [f"{tds[0].text.strip()}:{tds[1].text.strip()}" for row in soup.find("table").find_all("tr")[1:] if (tds := row.find_all("td")) and len(tds) > 1 and tds[0].text.strip() and tds[1].text.strip().isdigit()]
             self.log(f"geonode.comから {len(proxies)} 個のプロキシを取得しました。")
             return proxies
-        except Exception as e:
-            self.log(f"geonode.comからのプロキシ取得に失敗: {e}")
+        except Exception:
+            self.log("geonode.comからのプロキシ取得に失敗しました。")
             return []
 
     def get_proxies_from_freeproxylist(self):
         try:
             self.log("free-proxy-list.netからプロキシを取得中...")
             url = "https://free-proxy-list.net/"
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
-            proxies = []
-            table = soup.find("table", attrs={"class": "table-striped"})
-            if not table: return []
-            for row in table.find("tbody").find_all("tr"):
-                try:
-                    tds = row.find_all("td")
-                    ip = tds[0].text.strip()
-                    port = tds[1].text.strip()
-                    is_https = tds[6].text.strip().lower() == 'yes'
-                    if ip and port.isdigit() and is_https:
-                        proxies.append(f"{ip}:{port}")
-                except (IndexError, AttributeError):
-                    continue
+            proxies = [f"{tds[0].text.strip()}:{tds[1].text.strip()}" for row in soup.find("table", class_="table-striped").find("tbody").find_all("tr") if (tds := row.find_all("td")) and len(tds) > 6 and tds[0].text.strip() and tds[1].text.strip().isdigit() and tds[6].text.strip().lower() == 'yes']
             self.log(f"free-proxy-list.netから {len(proxies)} 個のプロキシを取得しました。")
             return proxies
-        except Exception as e:
-            self.log(f"free-proxy-list.netからのプロキシ取得に失敗: {e}")
+        except Exception:
+            self.log("free-proxy-list.netからのプロキシ取得に失敗しました。")
             return []
 
     def get_free_proxies(self):
         self.log("プロキシリストの取得を開始します...")
         all_proxies = []
-        source_funcs = [self.get_proxies_from_geonode, self.get_proxies_from_freeproxylist]
-
-        with ThreadPoolExecutor(max_workers=len(source_funcs)) as executor:
-            futures = [executor.submit(func) for func in source_funcs]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(self.get_proxies_from_geonode), executor.submit(self.get_proxies_from_freeproxylist)]
             for future in futures:
                 all_proxies.extend(future.result())
-
-        unique_proxies = list(set(all_proxies))
-        self.log(f"合計 {len(unique_proxies)} 個のユニークなプロキシを取得しました。")
-        self.proxies = unique_proxies
-        return unique_proxies
-
-    def get_chapter_urls(self, proxy):
-        toc_url = f"{self.BASE_URL}/{self.NOVEL_ID}/"
-        self.log(f"目次ページを取得中 (プロキシ: {proxy})...")
-        try:
-            response = requests.get(toc_url, headers=self.HEADERS, proxies={"http": f"http://{proxy}", "https": f"http://{proxy}"}, timeout=15)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-            links = soup.select('.index_box a')
-            urls = [self.BASE_URL + link.get('href') for link in links]
-            self.log(f"全 {len(urls)} 話のURLを取得しました。")
-            return urls
-        except requests.RequestException as e:
-            self.log(f"URL取得エラー (プロキシ: {proxy}): {e}")
-            return None
+        self.proxies = list(set(all_proxies))
+        self.log(f"合計 {len(self.proxies)} 個のユニークなプロキシを取得しました。")
+        return self.proxies
 
     def get_text_from_url_with_proxy(self, url):
         if not self.proxies:
-            self.log("プロキシがありません。")
             return ""
 
         max_retries = 5
-        for i in range(max_retries):
+        for _ in range(max_retries):
             proxy = random.choice(self.proxies)
             try:
                 time.sleep(0.5)
                 response = requests.get(url, headers=self.HEADERS, proxies={"http": f"http://{proxy}", "https": f"http://{proxy}"}, timeout=10)
                 response.raise_for_status()
                 soup = BeautifulSoup(response.content, 'html.parser')
-                title = soup.find('p', class_='novel_subtitle').text.strip()
-                honbun = soup.find('div', id='novel_honbun').text.strip()
-                return f"<h2>{title}</h2>\n{honbun}\n\n"
+                title_tag = soup.find('p', class_='novel_subtitle')
+                honbun_tag = soup.find('div', id='novel_honbun')
+
+                if title_tag and honbun_tag:
+                    title = title_tag.text.strip()
+                    honbun = honbun_tag.text.strip()
+                    return f"<h2>{title}</h2>\n{honbun}\n\n"
+                else:
+                    return ""
             except requests.RequestException:
                 continue
-
         self.log(f"ダウンロード失敗: {url.split('/')[-2]} (すべてのリトライに失敗)")
         return ""
 
     def run_download_process(self):
         try:
-            self.get_free_proxies()
-            if not self.proxies:
-                self.log("有効なプロキシが見つかりませんでした。処理を中断します。")
+            total_chapters = self.get_chapter_info_from_api()
+            if not total_chapters:
+                self.log("総話数が取得できず、処理を中断します。")
                 self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
                 return
 
-            chapter_urls = None
-            for i in range(10):
-                proxy = random.choice(self.proxies)
-                chapter_urls = self.get_chapter_urls(proxy)
-                if chapter_urls:
-                    break
-
-            if not chapter_urls:
-                self.log("章のURLが取得できませんでした。多くのプロキシがブロックされているようです。")
+            if not self.get_free_proxies():
+                self.log("有効なプロキシが見つかりませんでした。本文のダウンロードはできません。")
                 self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
                 return
 
-            total_chapters = len(chapter_urls)
-            self.log(f"{total_chapters} 話のダウンロードを開始します。")
-            self.progress["maximum"] = total_chapters
+            chapter_urls = [f"{self.BASE_URL}/{self.NOVEL_ID}/{i}/" for i in range(1, total_chapters + 1)]
+            self.log(f"{len(chapter_urls)} 話のダウンロードを開始します。")
+            self.progress["maximum"] = len(chapter_urls)
 
             def split_list(lst, n):
                 k, m = divmod(len(lst), n)
                 return (lst[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
-
             url_parts = list(split_list(chapter_urls, 4))
 
             num_workers = 10
@@ -201,28 +173,17 @@ class RezeroDownloaderApp:
             completed_count = 0
             with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 for i, part_urls in enumerate(url_parts):
-                    part_num = i + 1
-                    filename = f"rezero_part_{part_num}.txt"
-                    self.log(f"パート {part_num} の処理を開始、ファイル: '{filename}'")
-
-                    try:
-                        with open(filename, 'w', encoding='utf-8') as f:
-                            results = executor.map(self.get_text_from_url_with_proxy, part_urls)
-
-                            for text_content in results:
-                                if text_content:
-                                    f.write(text_content)
-
-                                completed_count += 1
-                                self.set_progress(completed_count)
-
-                                if completed_count % 100 == 0 or completed_count == total_chapters:
-                                    self.log(f"進捗: {completed_count}/{total_chapters}")
-
-                        self.log(f"パート {part_num} の書き込みが完了しました。")
-                    except IOError as e:
-                        self.log(f"ファイル書き込みエラー ({filename}): {e}")
-
+                    filename = f"rezero_part_{i+1}.txt"
+                    self.log(f"パート {i+1} の処理を開始、ファイル: '{filename}'")
+                    with open(filename, 'w', encoding='utf-8') as f:
+                        results = executor.map(self.get_text_from_url_with_proxy, part_urls)
+                        for text_content in results:
+                            if text_content:
+                                f.write(text_content)
+                            completed_count += 1
+                            self.set_progress(completed_count)
+                            if completed_count % 100 == 0 or completed_count == len(chapter_urls):
+                                self.log(f"進捗: {completed_count}/{len(chapter_urls)}")
             self.log("すべてのダウンロードとファイル保存が完了しました。")
 
         except Exception as e:
