@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Test artifacts
+test_*/
+test_*_input/
+test_*_output/
+*.pdf
+merged.pdf
+combined_output*.txt
+
+# IDE / Editor specific
+.vscode/
+.idea/
