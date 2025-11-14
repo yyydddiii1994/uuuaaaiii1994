@@ -5,7 +5,25 @@ import threading
 import queue
 import json
 import os
+import sys
+import traceback
 from llm_handler import LLMHandler, get_ollama_models
+
+# ======================================================================
+# I/O Redirection Class
+# ======================================================================
+class TextRedirector(object):
+    def __init__(self, widget):
+        self.widget = widget
+
+    def write(self, str):
+        self.widget.config(state=tk.NORMAL)
+        self.widget.insert(tk.END, str)
+        self.widget.see(tk.END)
+        self.widget.config(state=tk.DISABLED)
+
+    def flush(self):
+        pass
 
 # ======================================================================
 # Tooltip Class
@@ -48,28 +66,34 @@ class AnkiClozeConverter(tk.Tk):
         # --- スタイルの設定 ---
         sv_ttk.set_theme("light")
 
-        # --- メインフレームの作成 ---
+        # --- メインフレームとタブの設定 ---
         main_frame = ttk.Frame(self, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # --- 上部フレーム (設定エリア) ---
-        top_frame = ttk.LabelFrame(main_frame, text="設定", padding=10)
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill=tk.BOTH, expand=True)
+
+        converter_tab = ttk.Frame(notebook, padding=(0, 10, 0, 0))
+        log_tab = ttk.Frame(notebook)
+
+        notebook.add(converter_tab, text="変換")
+        notebook.add(log_tab, text="ログ")
+
+        # --- 「変換」タブのUI ---
+        # 上部フレーム (設定エリア)
+        top_frame = ttk.LabelFrame(converter_tab, text="設定", padding=10)
         top_frame.pack(fill=tk.X, pady=(0, 10))
         top_frame.column_configure(1, weight=1)
         top_frame.column_configure(3, weight=1)
 
-
-        # ファイル操作
         self.open_button = ttk.Button(top_frame, text="ファイルを開く", command=self.open_file)
         self.open_button.grid(row=0, column=0, padx=(0, 5))
         self.save_button = ttk.Button(top_frame, text="名前を付けて保存", command=self.save_file)
         self.save_button.grid(row=0, column=1, padx=(0, 20))
 
-        # LLM設定
         llm_label = ttk.Label(top_frame, text="LLM:")
         llm_label.grid(row=0, column=2, padx=(0, 5))
         self.llm_selector = ttk.Combobox(top_frame, values=["DeepSeek", "Ollama"], state="readonly")
-        self.llm_selector.current(0)
         self.llm_selector.grid(row=0, column=3, sticky="ew", padx=(0, 20))
 
         api_key_label = ttk.Label(top_frame, text="APIキー:")
@@ -77,41 +101,21 @@ class AnkiClozeConverter(tk.Tk):
         self.api_key_entry = ttk.Entry(top_frame, show="*")
         self.api_key_entry.grid(row=0, column=5, sticky="ew", padx=(0, 20))
 
-        # Ollamaモデル選択
         self.ollama_model_label = ttk.Label(top_frame, text="Ollamaモデル:")
         self.ollama_model_selector = ttk.Combobox(top_frame, state="readonly")
 
-        # バッチサイズ
         batch_size_label = ttk.Label(top_frame, text="一度に処理するカード枚数:")
         batch_size_label.grid(row=0, column=6, padx=(0, 5))
         self.batch_size_spinbox = ttk.Spinbox(top_frame, from_=1, to=100, increment=1, width=5)
-        self.batch_size_spinbox.set("10")
         self.batch_size_spinbox.grid(row=0, column=7)
 
-        # --- 設定の保存/復元 ---
-        self.config_file = "config.json"
-        self.load_config()
-        self.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        # --- 非同期処理の準備 ---
-        self.queue = queue.Queue()
-        self.after(100, self.process_queue)
-
-        # --- 初期設定とツールチップ ---
-        self.llm_selector.bind("<<ComboboxSelected>>", self.on_llm_selected)
-        self.on_llm_selected(None) # 初期UI状態を設定
-        self.load_ollama_models()
-        self.setup_tooltips()
-
-
-        # --- 中央フレーム (テキストエリア) ---
-        center_frame = ttk.Frame(main_frame)
+        # 中央フレーム (テキストエリア)
+        center_frame = ttk.Frame(converter_tab)
         center_frame.pack(fill=tk.BOTH, expand=True)
         center_frame.column_configure(0, weight=1)
         center_frame.column_configure(1, weight=1)
         center_frame.row_configure(0, weight=1)
 
-        # 入力エリア
         input_frame = ttk.LabelFrame(center_frame, text="入力 (編集可能)", padding=5)
         input_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         input_frame.row_configure(0, weight=1)
@@ -123,7 +127,6 @@ class AnkiClozeConverter(tk.Tk):
         input_scrollbar.grid(row=0, column=1, sticky="ns")
         self.input_text.config(yscrollcommand=input_scrollbar.set)
 
-        # 出力エリア
         output_frame = ttk.LabelFrame(center_frame, text="出力 (レビュー用)", padding=5)
         output_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         output_frame.row_configure(0, weight=1)
@@ -135,11 +138,42 @@ class AnkiClozeConverter(tk.Tk):
         output_scrollbar.grid(row=0, column=1, sticky="ns")
         self.output_text.config(yscrollcommand=output_scrollbar.set)
 
-
-        # --- 下部フレーム (実行ボタンとステータス) ---
-        bottom_frame = ttk.Frame(main_frame, padding=(0, 10, 0, 0))
+        # 下部フレーム (実行ボタンとステータス)
+        bottom_frame = ttk.Frame(converter_tab, padding=(0, 10, 0, 0))
         bottom_frame.pack(fill=tk.X)
         bottom_frame.column_configure(0, weight=1)
+
+        # --- 「ログ」タブのUI ---
+        log_frame = ttk.Frame(log_tab, padding=5)
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        log_frame.row_configure(0, weight=1)
+        log_frame.column_configure(0, weight=1)
+
+        self.log_text = tk.Text(log_frame, wrap=tk.WORD, relief=tk.FLAT, state=tk.DISABLED)
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
+        log_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.log_text.config(yscrollcommand=log_scrollbar.set)
+
+        # --- 初期化の続き ---
+        # 設定の保存/復元
+        self.config_file = "config.json"
+        self.load_config()
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        # 非同期処理の準備
+        self.queue = queue.Queue()
+        self.after(100, self.process_queue)
+
+        # 初期設定とツールチップ
+        self.llm_selector.bind("<<ComboboxSelected>>", self.on_llm_selected)
+        self.on_llm_selected(None) # 初期UI状態を設定
+        self.load_ollama_models()
+        self.setup_tooltips()
+
+        # --- 標準出力/エラーのリダイレクト ---
+        sys.stdout = TextRedirector(self.log_text)
+        sys.stderr = TextRedirector(self.log_text)
 
         self.convert_button = ttk.Button(bottom_frame, text="変換実行", style="Accent.TButton", command=self.start_conversion)
         self.convert_button.pack(side=tk.LEFT, padx=(0, 10))
@@ -156,7 +190,7 @@ class AnkiClozeConverter(tk.Tk):
                 self.output_text.config(state=tk.NORMAL)
                 self.output_text.insert(tk.END, message[1] + "\\n")
                 self.output_text.config(state=tk.DISABLED)
-            elif message[0] == "error":
+            elif message[0] == "simple_error":
                 messagebox.showerror("エラー", message[1])
             elif message[0] == "finished":
                 self.convert_button.config(state=tk.NORMAL)
@@ -212,12 +246,13 @@ class AnkiClozeConverter(tk.Tk):
 
             self.queue.put(("status", "変換処理が完了しました。"))
 
-        except ValueError as e:
-            self.queue.put(("error", str(e)))
-            self.queue.put(("status", "エラーが発生しました。"))
         except Exception as e:
-            self.queue.put(("error", f"予期せぬエラーが発生しました: {e}"))
-            self.queue.put(("status", "エラーが発生しました。"))
+            print("="*60)
+            print("変換処理中にエラーが発生しました。")
+            traceback.print_exc()
+            print("="*60)
+            self.queue.put(("simple_error", f"変換処理中にエラーが発生しました。\n詳細は「ログ」タブを確認してください。\n\nエラータイプ: {type(e).__name__}"))
+            self.queue.put(("status", "エラーが発生しました。詳細は「ログ」タブを確認してください。"))
         finally:
             self.queue.put(("finished", None))
 
@@ -322,5 +357,19 @@ class AnkiClozeConverter(tk.Tk):
 
 
 if __name__ == "__main__":
-    app = AnkiClozeConverter()
-    app.mainloop()
+    try:
+        app = AnkiClozeConverter()
+        app.mainloop()
+    except Exception as e:
+        import traceback
+        # アプリケーションの初期化に失敗した場合、フォールバックとして
+        # Tkinterのルートウィンドウを最小限で作成してエラーを表示する
+        root = tk.Tk()
+        root.withdraw() # メインウィンドウは表示しない
+        messagebox.showerror(
+            "致命的なエラー",
+            f"アプリケーションの起動中に予期せぬエラーが発生しました。\n\n"
+            f"エラー内容:\n{e}\n\n"
+            f"詳細:\n{traceback.format_exc()}"
+        )
+        root.destroy()
