@@ -83,8 +83,8 @@ class AnkiClozeConverter(tk.Tk):
         # 上部フレーム (設定エリア)
         top_frame = ttk.LabelFrame(converter_tab, text="設定", padding=10)
         top_frame.pack(fill=tk.X, pady=(0, 10))
-        top_frame.column_configure(1, weight=1)
-        top_frame.column_configure(3, weight=1)
+        top_frame.columnconfigure(1, weight=1)
+        top_frame.columnconfigure(3, weight=1)
 
         self.open_button = ttk.Button(top_frame, text="ファイルを開く", command=self.open_file)
         self.open_button.grid(row=0, column=0, padx=(0, 5))
@@ -112,14 +112,14 @@ class AnkiClozeConverter(tk.Tk):
         # 中央フレーム (テキストエリア)
         center_frame = ttk.Frame(converter_tab)
         center_frame.pack(fill=tk.BOTH, expand=True)
-        center_frame.column_configure(0, weight=1)
-        center_frame.column_configure(1, weight=1)
-        center_frame.row_configure(0, weight=1)
+        center_frame.columnconfigure(0, weight=1)
+        center_frame.columnconfigure(1, weight=1)
+        center_frame.rowconfigure(0, weight=1)
 
         input_frame = ttk.LabelFrame(center_frame, text="入力 (編集可能)", padding=5)
         input_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-        input_frame.row_configure(0, weight=1)
-        input_frame.column_configure(0, weight=1)
+        input_frame.rowconfigure(0, weight=1)
+        input_frame.columnconfigure(0, weight=1)
 
         self.input_text = tk.Text(input_frame, wrap=tk.WORD, relief=tk.FLAT)
         self.input_text.grid(row=0, column=0, sticky="nsew")
@@ -129,8 +129,8 @@ class AnkiClozeConverter(tk.Tk):
 
         output_frame = ttk.LabelFrame(center_frame, text="出力 (レビュー用)", padding=5)
         output_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        output_frame.row_configure(0, weight=1)
-        output_frame.column_configure(0, weight=1)
+        output_frame.rowconfigure(0, weight=1)
+        output_frame.columnconfigure(0, weight=1)
 
         self.output_text = tk.Text(output_frame, wrap=tk.WORD, relief=tk.FLAT, state=tk.DISABLED)
         self.output_text.grid(row=0, column=0, sticky="nsew")
@@ -141,13 +141,13 @@ class AnkiClozeConverter(tk.Tk):
         # 下部フレーム (実行ボタンとステータス)
         bottom_frame = ttk.Frame(converter_tab, padding=(0, 10, 0, 0))
         bottom_frame.pack(fill=tk.X)
-        bottom_frame.column_configure(0, weight=1)
+        bottom_frame.columnconfigure(0, weight=1)
 
         # --- 「ログ」タブのUI ---
         log_frame = ttk.Frame(log_tab, padding=5)
         log_frame.pack(fill=tk.BOTH, expand=True)
-        log_frame.row_configure(0, weight=1)
-        log_frame.column_configure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        log_frame.columnconfigure(0, weight=1)
 
         self.log_text = tk.Text(log_frame, wrap=tk.WORD, relief=tk.FLAT, state=tk.DISABLED)
         self.log_text.grid(row=0, column=0, sticky="nsew")
