@@ -1,4 +1,2 @@
+sv-ttk
 requests
-beautifulsoup4
-tkhtmlview
-cloudscraper
