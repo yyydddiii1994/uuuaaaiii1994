@@ -165,6 +165,13 @@ class AnkiClozeConverter(tk.Tk):
         self.queue = queue.Queue()
         self.after(100, self.process_queue)
 
+        # `convert_button`と`status_label`を先に定義
+        self.convert_button = ttk.Button(bottom_frame, text="変換実行", style="Accent.TButton", command=self.start_conversion)
+        self.convert_button.pack(side=tk.LEFT, padx=(0, 10))
+
+        self.status_label = ttk.Label(bottom_frame, text="準備完了")
+        self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         # 初期設定とツールチップ
         self.llm_selector.bind("<<ComboboxSelected>>", self.on_llm_selected)
         self.on_llm_selected(None) # 初期UI状態を設定
@@ -174,12 +181,6 @@ class AnkiClozeConverter(tk.Tk):
         # --- 標準出力/エラーのリダイレクト ---
         sys.stdout = TextRedirector(self.log_text)
         sys.stderr = TextRedirector(self.log_text)
-
-        self.convert_button = ttk.Button(bottom_frame, text="変換実行", style="Accent.TButton", command=self.start_conversion)
-        self.convert_button.pack(side=tk.LEFT, padx=(0, 10))
-
-        self.status_label = ttk.Label(bottom_frame, text="準備完了")
-        self.status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def process_queue(self):
         try:
