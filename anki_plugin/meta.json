@@ -1,0 +1,7 @@
+{
+  "name": "Cognitive Load Analyzer",
+  "version": "1.1.3",
+  "author": "Jules",
+  "readme": "README.md",
+  "package": "anki_cognitive_load_analyzer"
+}
