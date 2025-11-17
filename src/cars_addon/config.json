@@ -1,0 +1,19 @@
+{
+  "selected_preset": "Long-Term Learning",
+  "presets": {
+    "Long-Term Learning": {
+      "ladder_days": [0, 1, 3, 7, 21, 60, 180, 365, 730],
+      "lapse_level": 1,
+      "rf_step": 0.1,
+      "rf_min": 0.8,
+      "rf_max": 1.3
+    },
+    "Exam Cramming": {
+      "ladder_days": [0, 0.25, 1, 2, 4, 7, 14],
+      "lapse_level": 1,
+      "rf_step": 0.05,
+      "rf_min": 0.9,
+      "rf_max": 1.1
+    }
+  }
+}
