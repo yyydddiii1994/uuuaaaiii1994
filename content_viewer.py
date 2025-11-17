@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import filedialog, messagebox
 from tkhtmlview import HTMLScrolledText
 import cloudscraper
 from bs4 import BeautifulSoup
@@ -10,12 +11,13 @@ import os
 class ContentViewer(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Content Viewer")
-        self.geometry("800x600")
+        self.title("HTML Content Viewer & Editor")
+        self.geometry("1200x800")
 
         self.scraper = cloudscraper.create_scraper()
         self.failed_chapters_lock = threading.Lock()
 
+        # URL入力フレーム
         self.url_frame = tk.Frame(self)
         self.url_frame.pack(fill=tk.X, padx=10, pady=5)
         self.url_label = tk.Label(self.url_frame, text="URL:")
@@ -26,18 +28,65 @@ class ContentViewer(tk.Tk):
         self.fetch_button = tk.Button(self.url_frame, text="Fetch", command=self.fetch_content)
         self.fetch_button.pack(side=tk.LEFT, padx=5)
 
-        self.text_area = HTMLScrolledText(self, wrap=tk.WORD)
-        self.text_area.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        # 操作ボタンフレーム
+        self.action_frame = tk.Frame(self)
+        self.action_frame.pack(fill=tk.X, padx=10, pady=2)
+        self.preview_button = tk.Button(self.action_frame, text="Preview", command=self.preview_content)
+        self.preview_button.pack(side=tk.LEFT)
+        self.save_button = tk.Button(self.action_frame, text="Save As...", command=self.save_content)
+        self.save_button.pack(side=tk.LEFT, padx=5)
+
+        # メインの分割ウィンドウ
+        self.main_pane = tk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        # 左側：HTML表示エリア
+        self.html_view_frame = tk.Frame(self.main_pane)
+        self.html_view = HTMLScrolledText(self.html_view_frame, wrap=tk.WORD)
+        self.html_view.pack(fill=tk.BOTH, expand=True)
+        self.main_pane.add(self.html_view_frame, stretch="always")
+
+        # 右側：HTML編集エリア
+        self.html_edit_frame = tk.Frame(self.main_pane)
+        self.html_editor = tk.Text(self.html_edit_frame, wrap=tk.WORD, undo=True)
+        self.editor_scrollbar_y = tk.Scrollbar(self.html_edit_frame, orient=tk.VERTICAL, command=self.html_editor.yview)
+        self.html_editor.config(yscrollcommand=self.editor_scrollbar_y.set)
+        self.editor_scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        self.html_editor.pack(fill=tk.BOTH, expand=True)
+        self.main_pane.add(self.html_edit_frame, stretch="always")
 
         self.queue = queue.Queue()
         self.after(100, self.process_queue)
 
+        # ダウンロードフレーム（元々の機能）
         self.download_frame = tk.Frame(self)
         self.download_frame.pack(fill=tk.X, padx=10, pady=5)
         self.rezero_button = tk.Button(self.download_frame, text="Download Re:Zero All Chapters", command=self.download_rezero)
         self.rezero_button.pack(side=tk.LEFT)
         self.status_label = tk.Label(self.download_frame, text="Status: Idle")
         self.status_label.pack(side=tk.LEFT, padx=5)
+
+    def preview_content(self):
+        """編集エリアのHTMLをプレビュー表示エリアにレンダリングします。"""
+        html_content = self.html_editor.get("1.0", tk.END)
+        self.html_view.set_html(html_content)
+
+    def save_content(self):
+        """編集エリアのHTMLをファイルに保存します。"""
+        html_content = self.html_editor.get("1.0", tk.END)
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".html",
+            filetypes=[("HTML files", "*.html"), ("All files", "*.*")],
+            title="Save HTML file"
+        )
+        if not filepath:
+            return  # ユーザーがキャンセルした場合
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            messagebox.showinfo("Success", f"File saved successfully to:\n{filepath}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save file:\n{e}")
 
     def chunk_list(self, lst, n):
         for i in range(0, len(lst), n):
@@ -113,8 +162,11 @@ class ContentViewer(tk.Tk):
     def process_queue(self):
         try:
             msg_type, content = self.queue.get_nowait()
-            if msg_type == "status": self.text_area.set_html(f"<i>{content}</i>")
-            elif msg_type == "content": self.text_area.set_html(content)
+            if msg_type == "status": self.html_view.set_html(f"<i>{content}</i>")
+            elif msg_type == "content":
+                self.html_view.set_html(content)
+                self.html_editor.delete("1.0", tk.END)
+                self.html_editor.insert("1.0", content)
             elif msg_type == "download_status": self.status_label.config(text=content)
             elif msg_type == "enable_button": self.rezero_button.config(state=tk.NORMAL)
         except queue.Empty:
@@ -134,7 +186,9 @@ class ContentViewer(tk.Tk):
         try:
             response = self.scraper.get(url)
             response.raise_for_status()
-            self.queue.put(("content", response.text))
+            soup = BeautifulSoup(response.content, "html.parser")
+            pretty_html = soup.prettify()
+            self.queue.put(("content", pretty_html))
         except Exception as e:
             self.queue.put(("status", f"Failed to fetch content: {e}"))
 
