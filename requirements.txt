@@ -1,4 +1,4 @@
-requests
-beautifulsoup4
-tkhtmlview
-cloudscraper
+sentence-transformers
+scikit-learn
+numpy
+PyQt6
