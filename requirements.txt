@@ -1,4 +1,8 @@
-requests
-beautifulsoup4
-tkhtmlview
-cloudscraper
+torch
+transformers
+bitsandbytes
+sentence-transformers
+PyQt6
+accelerate
+numpy
+pandas
