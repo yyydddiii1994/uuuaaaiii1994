@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.so
+.env
+.venv
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+
+# Anki addon specific
+*.py.bak
+*.ankiaddon
+*.anki2
+addons21/
+user_files/
+
+# ML / DL specific
+# -----------------
+# Large data files
+*.pt
+*.pth
+*.h5
+*.hd5
+*.hdf5
+*.onnx
+*.pb
+*.model
+*.bin
+
+# Caches
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Hugging Face cache
+.huggingface/
+transformers_cache/
+
+# PyTorch cache
+.torch/
+
+# Vendorized dependencies (we don't want to commit GBs of libraries)
+vendor/
+src/lector_ts_addon/vendor/
+
+# Logs
+*.log

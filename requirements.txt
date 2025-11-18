@@ -1,4 +1,16 @@
-requests
-beautifulsoup4
-tkhtmlview
-cloudscraper
+# Core ML/DL Framework
+torch
+transformers
+bitsandbytes
+accelerate
+
+# For LECTOR model (semantic analysis)
+sentence-transformers
+
+# For RWKV model (if not included in transformers)
+# rwkv
+
+# For data handling
+numpy
+pandas # Useful for handling revlog data
+scikit-learn # For cosine similarity and other utilities
