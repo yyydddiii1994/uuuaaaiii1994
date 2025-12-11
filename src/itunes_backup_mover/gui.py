@@ -77,9 +77,17 @@ class AppGui:
         self.txt_log = scrolledtext.ScrolledText(log_frame, height=8, font=("Consolas", 9), state='disabled')
         self.txt_log.pack(fill=tk.BOTH, expand=True)
 
+        # Copy Log Button (Small) inside Log Frame? Or below?
+        # Let's put it at the bottom inside Action Section or just below log frame.
+        # Below log frame seems cleaner.
+
         # Action Section
         action_frame = ttk.Frame(self.root, padding="10")
         action_frame.pack(fill=tk.X, side=tk.BOTTOM)
+
+        # "Copy Log" button on the left of action frame
+        self.btn_copy_log = ttk.Button(action_frame, text="ログをコピー", command=self.copy_log_to_clipboard, width=15)
+        self.btn_copy_log.pack(side=tk.LEFT, padx=(0, 10))
 
         self.btn_execute = ttk.Button(action_frame, text="変更を実行する (一発完了)", command=self.start_execution)
         self.btn_execute.pack(fill=tk.X, ipady=5)
@@ -102,22 +110,36 @@ class AppGui:
         # Schedule next check
         self.root.after(100, self.process_log_queue)
 
-    def check_initial_state(self):
-        path = self.logic.find_current_backup_folder()
-        if path:
-            self.var_current_path.set(path)
-            self.log(f"現在のバックアップフォルダを検出しました:\n{path}")
+    def copy_log_to_clipboard(self):
+        """Copies the entire log content to clipboard."""
+        try:
+            log_content = self.txt_log.get("1.0", tk.END)
+            self.root.clipboard_clear()
+            self.root.clipboard_append(log_content)
+            messagebox.showinfo("コピー完了", "ログの内容をクリップボードにコピーしました。")
+        except Exception as e:
+            messagebox.showerror("エラー", f"コピーに失敗しました: {e}")
 
-            # Check if it's already a link
-            if self.logic._is_reparse_point(self.logic.found_path):
-                 target = self.logic.get_link_target(self.logic.found_path)
-                 status_msg = f"★ 現在、このフォルダはリンクになっています。\n→ 参照先: {target}"
-                 self.var_link_status.set(status_msg)
+    def check_initial_state(self):
+        try:
+            path = self.logic.find_current_backup_folder()
+            if path:
+                self.var_current_path.set(path)
+                self.log(f"現在のバックアップフォルダを検出しました:\n{path}")
+
+                # Check if it's already a link
+                if self.logic._is_reparse_point(self.logic.found_path):
+                     target = self.logic.get_link_target(self.logic.found_path)
+                     status_msg = f"★ 現在、このフォルダはリンクになっています。\n→ 参照先: {target}"
+                     self.var_link_status.set(status_msg)
+                else:
+                     self.var_link_status.set("（現在は通常のフォルダです）")
             else:
-                 self.var_link_status.set("（現在は通常のフォルダです）")
-        else:
-            self.var_current_path.set("未検出 (標準パスを使用します)")
-            self.log("既存のバックアップフォルダが見つかりませんでした。\n標準のパスをターゲットとして処理を進めます。")
+                self.var_current_path.set("未検出 (標準パスを使用します)")
+                self.log("既存のバックアップフォルダが見つかりませんでした。\n標準のパスをターゲットとして処理を進めます。")
+        except Exception as e:
+             self.log(f"初期化中にエラーが発生しました: {e}")
+             messagebox.showerror("初期化エラー", f"バックアップ場所の検出中にエラーが発生しました。\n{e}")
 
     def browse_folder(self):
         folder = filedialog.askdirectory(title="新しい保存先フォルダを選択してください")
