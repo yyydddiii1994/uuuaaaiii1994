@@ -10,7 +10,7 @@ class AppGui:
         self.root = root
         self.logic = logic_manager
         self.root.title("iTunesバックアップ保存先変更ツール")
-        self.root.geometry("600x550")
+        self.root.geometry("600x580")
         self.root.resizable(False, False)
 
         # Thread-safe logging queue
@@ -48,6 +48,11 @@ class AppGui:
         lbl_current = ttk.Label(current_frame, textvariable=self.var_current_path, wraplength=560)
         lbl_current.pack(fill=tk.X)
 
+        # Link Status Label
+        self.var_link_status = tk.StringVar(value="")
+        lbl_link_status = ttk.Label(current_frame, textvariable=self.var_link_status, foreground="blue", wraplength=560)
+        lbl_link_status.pack(fill=tk.X, pady=(5, 0))
+
         # New Path Section
         new_frame = ttk.LabelFrame(self.root, text="新しい保存先 (移動先)", padding="10")
         new_frame.pack(fill=tk.X, padx=10, pady=5)
@@ -56,11 +61,11 @@ class AppGui:
         input_frame.pack(fill=tk.X)
 
         self.var_new_path = tk.StringVar()
-        entry_new = ttk.Entry(input_frame, textvariable=self.var_new_path)
-        entry_new.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.entry_new = ttk.Entry(input_frame, textvariable=self.var_new_path)
+        self.entry_new.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
 
-        btn_browse = ttk.Button(input_frame, text="参照...", command=self.browse_folder)
-        btn_browse.pack(side=tk.RIGHT)
+        self.btn_browse = ttk.Button(input_frame, text="参照...", command=self.browse_folder)
+        self.btn_browse.pack(side=tk.RIGHT)
 
         lbl_help = ttk.Label(new_frame, text="※選択したフォルダの中に「Backup」フォルダが作成されます。", font=("Meiryo UI", 9), foreground="gray")
         lbl_help.pack(anchor=tk.W, pady=(5,0))
@@ -102,6 +107,14 @@ class AppGui:
         if path:
             self.var_current_path.set(path)
             self.log(f"現在のバックアップフォルダを検出しました:\n{path}")
+
+            # Check if it's already a link
+            if self.logic._is_reparse_point(self.logic.found_path):
+                 target = self.logic.get_link_target(self.logic.found_path)
+                 status_msg = f"★ 現在、このフォルダはリンクになっています。\n→ 参照先: {target}"
+                 self.var_link_status.set(status_msg)
+            else:
+                 self.var_link_status.set("（現在は通常のフォルダです）")
         else:
             self.var_current_path.set("未検出 (標準パスを使用します)")
             self.log("既存のバックアップフォルダが見つかりませんでした。\n標準のパスをターゲットとして処理を進めます。")
@@ -110,6 +123,12 @@ class AppGui:
         folder = filedialog.askdirectory(title="新しい保存先フォルダを選択してください")
         if folder:
             self.var_new_path.set(folder)
+
+    def set_input_state(self, state):
+        """Enable or disable inputs"""
+        self.entry_new.config(state=state)
+        self.btn_browse.config(state=state)
+        self.btn_execute.config(state=state)
 
     def start_execution(self):
         new_path = self.var_new_path.get()
@@ -120,7 +139,7 @@ class AppGui:
         if not messagebox.askyesno("確認", "バックアップ場所の変更を開始しますか？\n\n※iTunesが起動している場合は終了してください。\n※元データのサイズによっては時間がかかります。"):
             return
 
-        self.btn_execute.config(state='disabled')
+        self.set_input_state('disabled')
         self.log("\n=== 処理開始 ===")
 
         # Run in a separate thread to keep UI responsive
@@ -133,11 +152,13 @@ class AppGui:
             self.logic.move_and_link(new_path, callback=self.log)
             # Use root.after for message box to ensure main thread execution
             self.root.after(0, lambda: messagebox.showinfo("完了", "すべての処理が完了しました！"))
+            # Update status after success
+            self.root.after(0, self.check_initial_state)
         except Exception as e:
             self.log(f"エラー発生: {str(e)}")
             self.root.after(0, lambda: messagebox.showerror("エラー", f"処理中にエラーが発生しました:\n{str(e)}"))
         finally:
-            self.root.after(0, lambda: self.btn_execute.config(state='normal'))
+            self.root.after(0, lambda: self.set_input_state('normal'))
 
 if __name__ == "__main__":
     # Test execution
