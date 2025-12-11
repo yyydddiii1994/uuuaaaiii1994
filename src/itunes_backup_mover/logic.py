@@ -82,8 +82,11 @@ class BackupManager:
 
         return True
 
-    def _is_reparse_point(self, p: Path) -> bool:
+    def _is_reparse_point(self, p) -> bool:
         """Accurately checks if a path is a Reparse Point (Junction/Symlink) on Windows."""
+        if isinstance(p, str):
+            p = Path(p)
+
         try:
             # FILE_ATTRIBUTE_REPARSE_POINT = 0x400
             return bool(p.lstat().st_file_attributes & 0x400)
