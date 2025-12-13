@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import webbrowser
 
 try:
     from .logic import AppLogic
@@ -11,7 +12,7 @@ class SteamStatApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Steam プレイログ & 実績集計ツール")
-        self.root.geometry("800x600")
+        self.root.geometry("850x650") # Increased size slightly for new buttons
 
         self.logic = AppLogic(self.log_message)
 
@@ -30,14 +31,29 @@ class SteamStatApp:
         config_frame = ttk.LabelFrame(self.root, text="設定")
         config_frame.pack(fill="x", padx=10, pady=5)
 
-        ttk.Label(config_frame, text="Steam API Key:").grid(row=0, column=0, padx=5, pady=5)
-        ttk.Entry(config_frame, textvariable=self.api_key_var, width=40, show="*").grid(row=0, column=1, padx=5, pady=5)
+        # Row 0: Inputs
+        ttk.Label(config_frame, text="Steam API Key:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        ttk.Entry(config_frame, textvariable=self.api_key_var, width=35, show="*").grid(row=0, column=1, padx=5, pady=5)
 
-        ttk.Label(config_frame, text="Steam ID (64bit):").grid(row=0, column=2, padx=5, pady=5)
+        ttk.Label(config_frame, text="Steam ID (64bit):").grid(row=0, column=2, padx=5, pady=5, sticky="e")
         ttk.Entry(config_frame, textvariable=self.steam_id_var, width=20).grid(row=0, column=3, padx=5, pady=5)
 
         self.fetch_btn = ttk.Button(config_frame, text="データ取得開始", command=self.start_fetching)
-        self.fetch_btn.grid(row=0, column=4, padx=10, pady=5)
+        self.fetch_btn.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ns")
+
+        # Row 1: Help Buttons
+        def open_api_page():
+            webbrowser.open("https://steamcommunity.com/dev/apikey")
+
+        def open_id_page():
+            webbrowser.open("https://store.steampowered.com/account/")
+
+        btn_get_key = ttk.Button(config_frame, text="🔑 API Keyを取得 (Web)", command=open_api_page, width=20)
+        btn_get_key.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+
+        btn_check_id = ttk.Button(config_frame, text="🔍 IDを確認 (Web)", command=open_id_page, width=15)
+        btn_check_id.grid(row=1, column=3, padx=5, pady=2, sticky="w")
+
 
         # --- Middle: Summary Dashboard ---
         summary_frame = ttk.LabelFrame(self.root, text="サマリー")
