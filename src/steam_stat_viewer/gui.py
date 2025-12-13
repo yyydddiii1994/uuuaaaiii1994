@@ -38,8 +38,16 @@ class SteamStatApp:
         ttk.Label(config_frame, text="Steam ID (64bit):").grid(row=0, column=2, padx=5, pady=5, sticky="e")
         ttk.Entry(config_frame, textvariable=self.steam_id_var, width=20).grid(row=0, column=3, padx=5, pady=5)
 
-        self.fetch_btn = ttk.Button(config_frame, text="データ取得開始", command=self.start_fetching)
-        self.fetch_btn.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ns")
+        # Buttons Frame
+        btn_frame = ttk.Frame(config_frame)
+        btn_frame.grid(row=0, column=4, rowspan=2, padx=10, pady=5, sticky="ns")
+
+        self.fetch_btn = ttk.Button(btn_frame, text="データ取得開始", command=self.start_fetching)
+        self.fetch_btn.pack(side="top", pady=2, fill="x")
+
+        # Local Scan Button
+        self.local_btn = ttk.Button(btn_frame, text="ローカル読込", command=self.start_local_scan)
+        self.local_btn.pack(side="top", pady=2, fill="x")
 
         # Row 1: Help Buttons
         def open_api_page():
@@ -125,18 +133,25 @@ class SteamStatApp:
             return
 
         self.fetch_btn.config(state="disabled")
+        self.local_btn.config(state="disabled")
         self.logic.set_credentials(api_key, steam_id)
 
         # Run in thread to not freeze UI
         threading.Thread(target=self.run_fetch_pipeline, daemon=True).start()
 
+    def start_local_scan(self):
+        self.fetch_btn.config(state="disabled")
+        self.local_btn.config(state="disabled")
+
+        threading.Thread(target=self.run_local_pipeline, daemon=True).start()
+
     def run_fetch_pipeline(self):
-        self.log_message("データ取得を開始します...")
+        self.log_message("データ取得を開始します (APIモード)...")
 
         profile, games = self.logic.fetch_basic_info()
 
         if not profile or games is None:
-            self.root.after(0, lambda: self.fetch_btn.config(state="normal"))
+            self.root.after(0, lambda: self.enable_buttons())
             return
 
         # Update Summary UI
@@ -154,11 +169,38 @@ class SteamStatApp:
             self.update_game_row_callback
         )
 
+    def run_local_pipeline(self):
+        self.log_message("データ取得を開始します (ローカルモード)...")
+        self.log_message("※ 注意: ローカルモードでは実績の集計は行えません。")
+
+        profile, games = self.logic.fetch_local_data()
+
+        if not games:
+            self.log_message("エラー: ローカルデータの取得に失敗しました。")
+            self.root.after(0, lambda: self.enable_buttons())
+            return
+
+        total_minutes = sum(g.get('playtime_forever', 0) for g in games)
+        total_hours = total_minutes / 60
+
+        self.root.after(0, lambda: self.update_summary(len(games), total_hours))
+        self.root.after(0, lambda: self.populate_games_list(games, local_mode=True))
+
+        # In local mode, we skip achievement scanning or do a dummy pass
+        # But since we have no API key, fetch_achievements_background will just finish immediately if we try call it without credentials
+        # Or better, just finish here.
+        self.root.after(0, lambda: self.achievement_scan_complete(0))
+
+
+    def enable_buttons(self):
+        self.fetch_btn.config(state="normal")
+        self.local_btn.config(state="normal")
+
     def update_summary(self, count, hours):
         self.total_games_var.set(f"{count} 本")
         self.total_playtime_var.set(f"{hours:,.1f} 時間")
 
-    def populate_games_list(self, games):
+    def populate_games_list(self, games, local_mode=False):
         # Clear existing
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -166,13 +208,16 @@ class SteamStatApp:
         for idx, game in enumerate(games):
             minutes = game.get('playtime_forever', 0)
             hours = minutes / 60
+
+            ach_str = "..." if not local_mode else "-"
+
             # rank, name, playtime, achievements (placeholder)
             # Store appid as iid to easily update it later
             self.tree.insert("", "end", iid=str(game.get('appid')), values=(
                 idx + 1,
                 game.get('name'),
                 f"{hours:,.1f}",
-                "..."
+                ach_str
             ))
 
     def update_progress(self, current, total):
@@ -202,7 +247,11 @@ class SteamStatApp:
 
     def achievement_scan_complete(self, total_achieved):
         def _finish():
-            self.total_achievements_var.set(f"{total_achieved} 個")
-            self.fetch_btn.config(state="normal")
+            if total_achieved > 0:
+                self.total_achievements_var.set(f"{total_achieved} 個")
+            else:
+                self.total_achievements_var.set("集計なし")
+
+            self.enable_buttons()
             self.log_message("全ての処理が完了しました。")
         self.root.after(0, _finish)

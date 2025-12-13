@@ -4,8 +4,10 @@ import time
 
 try:
     from .steam_api import SteamClient
+    from .local_scanner import get_local_data
 except ImportError:
     from steam_api import SteamClient
+    from local_scanner import get_local_data
 
 class AppLogic:
     def __init__(self, log_callback):
@@ -39,6 +41,24 @@ class AppLogic:
 
         return profile, games
 
+    def fetch_local_data(self):
+        """Fetches data from local Steam installation."""
+        self.log("ローカルのSteam設定ファイルをスキャン中...")
+        try:
+            user_id, games = get_local_data()
+            self.log(f"ローカルユーザーID: {user_id}")
+            self.log(f"検出されたゲーム数: {len(games)}")
+
+            # Create a mock profile object
+            profile = {
+                "personaname": f"LocalUser ({user_id})",
+                "avatarfull": "" # No avatar available locally
+            }
+            return profile, games
+        except Exception as e:
+            self.log(f"ローカルスキャンエラー: {e}")
+            return None, None
+
     def fetch_achievements_background(self, games, progress_callback, completion_callback, game_update_callback=None):
         """
         Background task to fetch achievements for all games.
@@ -48,6 +68,13 @@ class AppLogic:
             games_with_achievements = 0
             processed_count = 0
             total_games = len(games)
+
+            if not self.client:
+                self.log("注意: APIキーが設定されていないため、実績データは取得できません。")
+                # Just finish immediately with 0 achievements
+                if completion_callback:
+                    completion_callback(0)
+                return
 
             self.log("実績データの全件取得を開始します (これには時間がかかります)...")
 
