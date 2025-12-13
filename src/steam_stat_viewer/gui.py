@@ -1,7 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from .logic import AppLogic
+
+try:
+    from .logic import AppLogic
+except ImportError:
+    from logic import AppLogic
 
 class SteamStatApp:
     def __init__(self, root):

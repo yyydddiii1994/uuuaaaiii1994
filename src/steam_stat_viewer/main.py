@@ -6,22 +6,17 @@ import traceback
 import platform
 import datetime
 
-# Add the project root to sys.path to allow relative imports to work
-# when running this script directly.
+# Setup paths to ensure we can import local modules whether run from root or src
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
+
+# Always add current dir to path to support local imports
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+# Add project root if it exists (for src.xxx imports)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-
-try:
-    from src.steam_stat_viewer.gui import SteamStatApp
-except ImportError as e:
-    # If imports fail here, we need to handle it in the main block
-    # But strictly speaking, main() hasn't started.
-    # We will let the main try/except catch this if we move imports inside,
-    # or rely on the fact that if this fails, the script crashes before main.
-    # To be "forced startup", we should probably import inside main or try/except here.
-    pass
 
 def generate_detailed_log(traceback_str):
     """Generates a detailed system report with the traceback."""
@@ -131,7 +126,11 @@ def show_error_gui(error_msg):
 def main():
     try:
         # Late import to catch import errors inside the try block
-        from src.steam_stat_viewer.gui import SteamStatApp
+        # Try importing as a package first, then as a local module
+        try:
+            from src.steam_stat_viewer.gui import SteamStatApp
+        except ImportError:
+            from gui import SteamStatApp
 
         root = tk.Tk()
 

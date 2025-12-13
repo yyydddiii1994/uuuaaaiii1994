@@ -1,7 +1,11 @@
 import threading
 import queue
 import time
-from .steam_api import SteamClient
+
+try:
+    from .steam_api import SteamClient
+except ImportError:
+    from steam_api import SteamClient
 
 class AppLogic:
     def __init__(self, log_callback):
