@@ -1,0 +1,18 @@
+{
+  "min_delay": 8,
+  "max_delay": 15,
+  "max_items_per_day": 1000,
+  "headless": false,
+  "user_agent_rotation": true,
+  "selectors": {
+    "search_box": "#searchboxinput",
+    "search_button": "#searchbox-searchbutton",
+    "feed_panel": "div[role='feed']",
+    "result_card": "div[role='article']",
+    "name": "h1",
+    "address": "button[data-item-id='address']",
+    "phone": "button[data-item-id^='phone']",
+    "website": "a[data-item-id='authority']",
+    "share_button": "button[data-value='Share']"
+  }
+}
