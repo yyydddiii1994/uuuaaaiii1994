@@ -224,7 +224,9 @@ class MunicipalityCheckerApp:
                     link_text = a.get_text().lower()
                     href = a['href'].lower()
                     # キーワードで探す
-                    if 'english' in link_text or 'foreign' in link_text or 'translation' in link_text or '翻訳' in link_text or 'foreign' in href:
+                    if 'english' in link_text or 'foreign' in link_text or 'translation' in link_text or '翻訳' in link_text or 'foreign' in href \
+                       or 'portal' in link_text or 'top' in link_text or 'home' in link_text or 'main' in link_text \
+                       or 'ポータル' in link_text or 'トップ' in link_text or 'ホーム' in link_text or '市民' in link_text:
                         potential_links.append(a['href'])
 
                 # 最初の数個だけチェック（負荷対策）
@@ -232,6 +234,10 @@ class MunicipalityCheckerApp:
                     try:
                         # 絶対URLに変換
                         target_link = urllib.parse.urljoin(url, link_href)
+
+                        # 自分自身へのリンクはスキップ
+                        if target_link == url or target_link == url + '/':
+                            continue
 
                         # ★リンク先URLだけで判定できるか？ (北海道庁パターン)
                         if 'google' in target_link and 'translate' in target_link:
