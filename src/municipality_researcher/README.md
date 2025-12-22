@@ -1,16 +1,28 @@
 # 自治体ウェブサイト調査ツール
 
-このツールは、日本の自治体ウェブサイトの多言語対応状況やふりがな機能の有無などを調査・入力するためのGUIアプリケーションです。
+このプロジェクトは、日本の自治体ウェブサイトの多言語対応状況やふりがな機能の有無などを調査するためのツール群です。
 
-## 機能
+## 含まれるツール
 
-*   自治体リストの読み込み
-*   自治体ごとの詳細情報の入力・編集
-    *   公式サイトURL（ブラウザで開く機能付き）
-    *   ふりがな機能の有無
-    *   翻訳情報の詳細（有無、種類、提供言語数）
-    *   各言語の対応状況（チェックボックス）
-*   データの保存（Excel形式）
+1.  **自治体サイト完全攻略ツール Mark-III (自動検索機能搭載)** (`src/municipality_researcher/auto_checker.py`)
+    *   **機能:**
+        *   Excel/CSVファイルを読み込み、自動的にウェブサイトを解析します。
+        *   URLが不明な場合はDuckDuckGoで検索して補完します。
+        *   ふりがな機能、翻訳ツール（Google, J-SERVER, Wovn等）の有無を自動判定します。
+        *   結果をExcelファイルに保存します。
+    *   **使い方:**
+        ```bash
+        python3 src/municipality_researcher/auto_checker.py
+        ```
+
+2.  **手動調査用GUIツール** (`src/municipality_researcher/main.py`)
+    *   **機能:**
+        *   自治体リストを表示し、詳細を手動で入力・確認できます。
+        *   細かい言語対応状況（アイスランド語など多数）をチェックボックスで記録できます。
+    *   **使い方:**
+        ```bash
+        python3 src/municipality_researcher/main.py
+        ```
 
 ## インストール
 
@@ -20,23 +32,7 @@
 pip install -r src/municipality_researcher/requirements.txt
 ```
 
-## 使い方
-
-以下のコマンドを実行してアプリケーションを起動します。
-
-```bash
-python3 src/municipality_researcher/main.py
-```
-
-### 操作方法
-
-1.  左側のリストから調査対象の自治体を選択します。
-2.  右側の詳細パネルで、ウェブサイトの情報を入力します。
-    *   「開く」ボタンで公式サイトにアクセスできます。
-    *   対応言語にチェックを入れると、提供言語数が自動的に更新される場合があります（または手動入力）。
-3.  「保存 (Save)」ボタンを押してデータを保存します。データは `data/municipality_data.xlsx` に保存されます。
-
 ## データについて
 
-*   初期データとして `src/municipality_researcher/sample_data.csv` が読み込まれます。
-*   保存されたデータはExcelファイルとして出力されるため、別途Excelで開いて確認・編集することも可能です。
+*   自動ツールは、読み込んだExcel/CSVファイルに結果を追記して保存します。
+*   手動ツールは `data/municipality_data.xlsx` を使用します。
