@@ -36,11 +36,17 @@ ALL_LANG_COLUMNS = [
     "ラオ語", "ラトビア語", "リトアニア語", "リンガラ語", "ルーマニア語", "ルクセンブルク語", "ロシア語"
 ]
 
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+]
+
 class MunicipalityCheckerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("自治体サイト攻略ツール Mark-VII (リダイレクト追跡・完全自動版)")
-        self.root.geometry("950x750")
+        self.root.title("自治体サイト攻略ツール Mark-XI (カウントダウン＆NordVPN対策)")
+        self.root.geometry("950x800")
 
         style = ttk.Style()
         style.theme_use('clam')
@@ -72,8 +78,10 @@ class MunicipalityCheckerApp:
         self.btn_run.pack(side="left", padx=5)
         self.btn_pause = ttk.Button(frame_action, text="一時停止＆保存 (Pause)", command=self.toggle_pause, width=25, state='disabled')
         self.btn_pause.pack(side="left", padx=5)
-        lbl_hint = ttk.Label(frame_action, text="※「English」等のリンク先まで追跡して判定します", foreground="red")
-        lbl_hint.pack(side="left", padx=10)
+
+        # ★状態表示用のラベル（Mark XI新機能）
+        self.lbl_status = ttk.Label(frame_action, text="待機中", font=("Meiryo", 11, "bold"), foreground="blue")
+        self.lbl_status.pack(side="left", padx=20)
 
         # 3. ログ
         frame_log = ttk.LabelFrame(self.root, text="3. 戦況ログ", padding=10)
@@ -95,6 +103,8 @@ class MunicipalityCheckerApp:
                     self.txt_log.insert(tk.END, task["msg"] + "\n")
                     self.txt_log.see(tk.END)
                     self.txt_log.configure(state='disabled')
+                elif action == "status":
+                    self.lbl_status.configure(text=task["text"], foreground=task["color"])
                 elif action == "progress_max":
                     self.progress["maximum"] = task["value"]
                 elif action == "progress_update":
@@ -103,6 +113,7 @@ class MunicipalityCheckerApp:
                     messagebox.showinfo(task["title"], task["msg"])
                     self.btn_run.configure(state='normal')
                     self.btn_pause.configure(state='disabled')
+                    self.lbl_status.configure(text="完了", foreground="green")
                 elif action == "error":
                     messagebox.showerror("エラー", task["msg"])
                     self.btn_run.configure(state='normal')
@@ -119,6 +130,9 @@ class MunicipalityCheckerApp:
     def log(self, msg):
         self.gui_queue.put({"action": "log", "msg": msg})
 
+    def update_status(self, text, color="black"):
+        self.gui_queue.put({"action": "status", "text": text, "color": color})
+
     def browse_file(self):
         f = filedialog.askopenfilename(filetypes=[("Excel Files", "*.xlsx"), ("CSV Files", "*.csv")])
         if f: self.file_path.set(f)
@@ -128,10 +142,12 @@ class MunicipalityCheckerApp:
             self.is_paused = False
             self.btn_pause.configure(text="一時停止＆保存 (Pause)")
             self.log(">>> 再開します... Go!")
+            self.update_status("解析中...", "blue")
         else:
             self.is_paused = True
             self.btn_pause.configure(text="再開 (Resume)")
             self.log(">>> 一時停止中。データ保存待機...")
+            self.update_status("一時停止中", "red")
 
     def start_thread(self):
         if not self.file_path.get():
@@ -140,33 +156,64 @@ class MunicipalityCheckerApp:
         self.is_running = True
         self.is_paused = False
         self.btn_run.configure(state='disabled')
-        # Use queue to enable pause button safely from thread start logic if needed,
-        # but here we are in main thread so direct config is fine.
-        # But for consistency with finish logic, we set initial state here.
         self.btn_pause.configure(state='normal', text="一時停止＆保存 (Pause)")
+        self.update_status("解析開始...", "blue")
         threading.Thread(target=self.run_process, daemon=True).start()
+
+    def wait_with_countdown(self, seconds, message="待機中"):
+        """★カウントダウンタイマー付きの待機関数 (Mark XI)"""
+        for i in range(seconds, 0, -1):
+            if not self.is_running: break # 強制終了対応
+            if self.is_paused: break # 一時停止対応
+
+            # ステータス更新
+            self.update_status(f"{message}... 残り {i}秒", "orange")
+            time.sleep(1)
+
+        # 終わったら戻す
+        self.update_status("解析中...", "blue")
 
     def search_official_url(self, pref, city):
         query = f"{pref} {city} 公式ホームページ"
-        self.log(f"  🔍 URL検索: {query}")
         url = "https://html.duckduckgo.com/html/"
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/96.0.4664.110 Safari/537.36'}
-        try:
-            time.sleep(random.uniform(2.0, 4.0))
-            res = requests.post(url, data={'q': query}, headers=headers, timeout=15)
-            soup = BeautifulSoup(res.text, 'html.parser')
-            links = soup.find_all('a', class_='result__a')
-            for link in links:
-                found_url = link.get('href')
-                if "y.js" in found_url or "ad_provider" in found_url: continue
-                if "uddg=" in found_url:
-                    parsed = urllib.parse.urlparse(found_url)
-                    qs = urllib.parse.parse_qs(parsed.query)
-                    if 'uddg' in qs: return qs['uddg'][0]
-                return found_url
-            return None
-        except Exception:
-            return None
+
+        for attempt in range(3):
+            headers = {'User-Agent': random.choice(USER_AGENTS)}
+            try:
+                if attempt > 0: self.log(f"  ⚠️ 再検索中... ({attempt+1}回目)")
+                else: self.log(f"  🔍 URL検索: {query}")
+
+                # 検索前の短い待機
+                time.sleep(random.uniform(2.0, 4.0))
+
+                res = requests.post(url, data={'q': query}, headers=headers, timeout=15)
+
+                if res.status_code != 200: raise Exception(f"Status {res.status_code}")
+
+                soup = BeautifulSoup(res.text, 'html.parser')
+                links = soup.find_all('a', class_='result__a')
+
+                for link in links:
+                    found_url = link.get('href')
+                    if "y.js" in found_url or "ad_provider" in found_url: continue
+                    if "uddg=" in found_url:
+                        parsed = urllib.parse.urlparse(found_url)
+                        qs = urllib.parse.parse_qs(parsed.query)
+                        if 'uddg' in qs: return qs['uddg'][0]
+                    return found_url
+
+                raise Exception("リンクなし(ブロックの可能性)")
+
+            except Exception as e:
+                if attempt < 2:
+                    wait_time = 40 + (attempt * 20) # 40秒, 60秒
+                    self.log(f"  ⛔ ブロック検知。{wait_time}秒 冷却します。")
+                    # ★ここでカウントダウン発動
+                    self.wait_with_countdown(wait_time, "検索制限中・冷却待機")
+                else:
+                    self.log(f"  ❌ 検索失敗: {e}")
+                    return None
+        return None
 
     def analyze_source(self, src, text):
         """ソースコードとテキストからツールを判定する共通ロジック"""
@@ -196,7 +243,7 @@ class MunicipalityCheckerApp:
         return tool, langs_found
 
     def check_site_features(self, url):
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
+        headers = {'User-Agent': random.choice(USER_AGENTS)}
         result = {"furigana": "無", "tool_name": "不明(要確認)", "has_translation": "無", "lang_flags": {}}
         for lang in ALL_LANG_COLUMNS: result["lang_flags"][lang] = 0
         result["lang_flags"]["日本語"] = 1
@@ -216,14 +263,14 @@ class MunicipalityCheckerApp:
             # ツール判定 (第1段階)
             detected_tool, extra_langs = self.analyze_source(src, text)
 
-            # --- 2. ツールが見つからない場合：リンク追跡モード (Mark VIIの新機能) ---
+            # --- 2. ツールが見つからない場合：リンク追跡モード (Mark VIIの新機能 - Deep Check) ---
             if not detected_tool:
                 # 翻訳ページへのリンクを探す
                 potential_links = []
                 for a in soup.find_all('a', href=True):
                     link_text = a.get_text().lower()
                     href = a['href'].lower()
-                    # キーワードで探す
+                    # キーワードで探す (Mark VIIの拡張キーワード)
                     if 'english' in link_text or 'foreign' in link_text or 'translation' in link_text or '翻訳' in link_text or 'foreign' in href \
                        or 'portal' in link_text or 'top' in link_text or 'home' in link_text or 'main' in link_text \
                        or 'ポータル' in link_text or 'トップ' in link_text or 'ホーム' in link_text or '市民' in link_text:
@@ -251,9 +298,10 @@ class MunicipalityCheckerApp:
                             break
 
                         # ★リンク先に飛んでみる (札幌市パターン)
-                        # redirect=Trueで飛ばされた先のURLを確認する
                         self.log(f"    → 追跡中: {target_link[:40]}...")
-                        sub_res = requests.get(target_link, headers=headers, timeout=8, allow_redirects=True)
+                        # 追跡時もUser-Agentをランダムに
+                        sub_headers = {'User-Agent': random.choice(USER_AGENTS)}
+                        sub_res = requests.get(target_link, headers=sub_headers, timeout=8, allow_redirects=True)
                         sub_res.encoding = sub_res.apparent_encoding
 
                         # 飛ばされた先のURLをチェック
@@ -349,6 +397,14 @@ class MunicipalityCheckerApp:
                     continue
 
                 target_url = str(row[url_col]) if url_col else ""
+
+                # 完了済みスキップ (Mark XI)
+                tool_val = str(row.get("翻訳種類", ""))
+                # すでにURLがあり、かつ解析結果が入っている（nan/空白/不明/エラー以外）ならスキップ
+                if "http" in target_url and tool_val not in ["nan", "", "不明(要確認)", "アクセスエラー"]:
+                     self.gui_queue.put({"action": "progress_update", "value": i+1})
+                     continue
+
                 self.log(f"[{i+1}/{total}] {pref} {city}")
 
                 if (pd.isna(target_url) or "http" not in target_url):
