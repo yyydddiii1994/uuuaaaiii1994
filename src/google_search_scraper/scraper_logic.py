@@ -40,7 +40,7 @@ class GoogleSearchScraper:
             self.log(f"Error setting up driver: {e}")
             raise
 
-    def run(self, keywords, max_results, output_dir, headless=False):
+    def run(self, keywords, max_results, output_dir, headless=False, debug_mode=False):
         self.log(f"【開始】自動リサーチを開始します。全{len(keywords)}件")
 
         try:
@@ -68,19 +68,28 @@ class GoogleSearchScraper:
 
                     time.sleep(random.uniform(3, 6))
 
+                    # Debug: Log page info
+                    if debug_mode:
+                        self.log(f"[DEBUG] Page Title: {self.driver.title}")
+                        self.log(f"[DEBUG] Current URL: {self.driver.current_url}")
+
                     results_data = []
 
                     # Get results
                     elements = self.driver.find_elements(By.CSS_SELECTOR, "div.g")
 
+                    if debug_mode:
+                        self.log(f"[DEBUG] Found {len(elements)} elements matching 'div.g'")
+
                     rank = 1
-                    for elem in elements:
+                    for i, elem in enumerate(elements):
                         if self.stop_event.is_set(): break
                         if len(results_data) >= max_results:
                             break
 
                         try:
                             if "スポンサー" in elem.text:
+                                if debug_mode: self.log(f"[DEBUG] Element {i}: Skipped (Sponsored)")
                                 continue
 
                             title_elem = elem.find_element(By.TAG_NAME, "h3")
@@ -90,6 +99,7 @@ class GoogleSearchScraper:
                             url = link_elem.get_attribute("href")
 
                             if not url or "google.com" in url:
+                                if debug_mode: self.log(f"[DEBUG] Element {i}: Skipped (Invalid URL or Google Link)")
                                 continue
 
                             results_data.append({
@@ -99,11 +109,26 @@ class GoogleSearchScraper:
                             })
                             rank += 1
 
-                        except Exception:
+                        except Exception as e:
+                            if debug_mode: self.log(f"[DEBUG] Element {i}: Skipped (Exception: {e})")
                             continue
 
                     if len(results_data) < 5:
                         self.log(f"⚠ 警告: 「{keyword}」は{len(results_data)}件しか取得できませんでした。手動確認推奨。")
+
+                        # Snapshot for debug
+                        if debug_mode and len(results_data) == 0:
+                            timestamp = datetime.datetime.now().strftime("%H%M%S")
+                            dump_dir = output_dir if output_dir else os.getcwd()
+
+                            html_path = os.path.join(dump_dir, f"debug_{keyword}_{timestamp}.html")
+                            with open(html_path, "w", encoding="utf-8") as f:
+                                f.write(self.driver.page_source)
+
+                            png_path = os.path.join(dump_dir, f"debug_{keyword}_{timestamp}.png")
+                            self.driver.save_screenshot(png_path)
+
+                            self.log(f"[DEBUG] 保存失敗のため、デバッグ情報を保存しました:\n HTML: {html_path}\n PNG: {png_path}")
 
                     if results_data:
                         df = pd.DataFrame(results_data)

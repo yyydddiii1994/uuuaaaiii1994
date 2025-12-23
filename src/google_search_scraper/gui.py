@@ -20,6 +20,7 @@ class ScraperGUI:
         self.max_results_var = tk.StringVar(value="20")
         self.output_dir_var = tk.StringVar(value=os.getcwd())
         self.headless_var = tk.BooleanVar(value=False)
+        self.debug_mode_var = tk.BooleanVar(value=False)
         self.is_running = False
 
         # Queue for logging
@@ -43,7 +44,10 @@ class ScraperGUI:
         ttk.Entry(settings_frame, textvariable=self.max_results_var, width=10).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         # Headless Mode
-        ttk.Checkbutton(settings_frame, text="Headlessモード (ブラウザ非表示)", variable=self.headless_var).grid(row=2, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(settings_frame, text="Headlessモード (ブラウザ非表示)", variable=self.headless_var).grid(row=2, column=0, columnspan=2, sticky="w")
+
+        # Debug Mode
+        ttk.Checkbutton(settings_frame, text="詳細デバッグモード (HTML保存など)", variable=self.debug_mode_var).grid(row=2, column=2, sticky="w")
 
         # Keywords Frame
         keywords_frame = ttk.LabelFrame(self.root, text="検索キーワード (1行に1つ)", padding=10)
@@ -113,13 +117,13 @@ class ScraperGUI:
 
         self.thread = threading.Thread(
             target=self._run_thread,
-            args=(keywords, max_results, output_dir, self.headless_var.get())
+            args=(keywords, max_results, output_dir, self.headless_var.get(), self.debug_mode_var.get())
         )
         self.thread.start()
 
-    def _run_thread(self, keywords, max_results, output_dir, headless):
+    def _run_thread(self, keywords, max_results, output_dir, headless, debug_mode):
         try:
-            self.scraper.run(keywords, max_results, output_dir, headless)
+            self.scraper.run(keywords, max_results, output_dir, headless, debug_mode=debug_mode)
         except Exception as e:
             self._log(f"重大なエラー: {e}")
         finally:
