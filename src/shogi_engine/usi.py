@@ -12,6 +12,16 @@ class USIEngine:
         self.engine_author = "Jules"
         self.search_thread = None
 
+    def _search_task(self, board_copy, time_limit):
+        # Increased depth for better potential
+        best_move = self.searcher.search(board_copy, max_depth=12, time_limit=time_limit)
+
+        if best_move:
+            print(f"bestmove {best_move.usi()}")
+        else:
+            print("bestmove resign")
+        sys.stdout.flush()
+
     def run(self):
         while True:
             try:
@@ -34,6 +44,7 @@ class USIEngine:
 
                 elif cmd == "usinewgame":
                     self.board.reset()
+                    self.searcher.clear_tt()
 
                 elif cmd == "position":
                     if len(parts) > 1:
@@ -61,37 +72,43 @@ class USIEngine:
                                     print(f"info string Failed to push move {move_str}: {e}")
 
                 elif cmd == "go":
-                    time_limit = 2.0
-                    if "btime" in parts and self.board.turn == shogi.BLACK:
-                        idx = parts.index("btime")
-                        if idx + 1 < len(parts):
-                            btime = int(parts[idx+1])
-                            time_limit = max(0.5, btime / 30000.0) # very simple time management
-                    elif "wtime" in parts and self.board.turn == shogi.WHITE:
-                        idx = parts.index("wtime")
-                        if idx + 1 < len(parts):
-                            wtime = int(parts[idx+1])
-                            time_limit = max(0.5, wtime / 30000.0)
+                    time_limit = 5.0
 
-                    if "byoyomi" in parts:
-                        idx = parts.index("byoyomi")
-                        if idx + 1 < len(parts):
-                            byoyomi = int(parts[idx+1])
-                            time_limit = max(time_limit, byoyomi / 1000.0 - 0.2)
-
-                    # We run search in the main thread for simplicity here,
-                    # but properly we should handle 'stop' command asynchronously.
-                    best_move = self.searcher.search(self.board, max_depth=5, time_limit=time_limit)
-                    if best_move:
-                        print(f"bestmove {best_move.usi()}")
+                    if "infinite" in parts:
+                        time_limit = 999999.0
                     else:
-                        print("bestmove resign")
-                    sys.stdout.flush()
+                        if "btime" in parts and self.board.turn == shogi.BLACK:
+                            idx = parts.index("btime")
+                            if idx + 1 < len(parts):
+                                btime = int(parts[idx+1])
+                                time_limit = max(0.5, btime / 30000.0)
+                        elif "wtime" in parts and self.board.turn == shogi.WHITE:
+                            idx = parts.index("wtime")
+                            if idx + 1 < len(parts):
+                                wtime = int(parts[idx+1])
+                                time_limit = max(0.5, wtime / 30000.0)
+
+                        if "byoyomi" in parts:
+                            idx = parts.index("byoyomi")
+                            if idx + 1 < len(parts):
+                                byoyomi = int(parts[idx+1])
+                                time_limit = max(time_limit, byoyomi / 1000.0 - 0.2)
+
+                    board_copy = shogi.Board(self.board.sfen())
+                    self.searcher.stop_search = False
+
+                    self.search_thread = threading.Thread(target=self._search_task, args=(board_copy, time_limit))
+                    self.search_thread.start()
 
                 elif cmd == "stop":
                     self.searcher.stop_search = True
+                    if self.search_thread:
+                        self.search_thread.join()
 
                 elif cmd == "quit":
+                    self.searcher.stop_search = True
+                    if self.search_thread and self.search_thread.is_alive():
+                        self.search_thread.join()
                     break
             except Exception as e:
                 print(f"info string error: {e}")

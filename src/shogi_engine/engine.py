@@ -55,7 +55,7 @@ def get_pst_value(piece_type, color, square):
 
 def evaluate(board: shogi.Board):
     if board.is_checkmate():
-        return -30000 if board.turn == shogi.BLACK else 30000
+        return -30000
 
     score = 0
 
