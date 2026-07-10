@@ -2,7 +2,18 @@ import sys
 import shogi
 import time
 import threading
+import logging
+import traceback
+import os
 from .search import Searcher
+
+# Configure logging to write to a file in the executable's directory
+log_file = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), 'shogi_engine_error.log')
+logging.basicConfig(
+    filename=log_file,
+    level=logging.ERROR,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
 
 class USIEngine:
     def __init__(self):
@@ -13,19 +24,27 @@ class USIEngine:
         self.search_thread = None
 
     def _search_task(self, board_copy, time_limit):
-        # Increased depth for better potential
-        best_move = self.searcher.search(board_copy, max_depth=12, time_limit=time_limit)
+        try:
+            # Increased depth for better potential
+            best_move = self.searcher.search(board_copy, max_depth=12, time_limit=time_limit)
 
-        if best_move:
-            print(f"bestmove {best_move.usi()}")
-        else:
-            print("bestmove resign")
-        sys.stdout.flush()
+            if best_move:
+                print(f"bestmove {best_move.usi()}")
+            else:
+                print("bestmove resign")
+            sys.stdout.flush()
+        except Exception as e:
+            logging.error(f"Error in search thread: {e}")
+            logging.error(traceback.format_exc())
 
     def run(self):
         while True:
             try:
-                line = sys.stdin.readline().strip()
+                line = sys.stdin.readline()
+                if not line:
+                    break # EOF reached
+
+                line = line.strip()
                 if not line:
                     continue
 
@@ -57,7 +76,8 @@ class USIEngine:
                                 try:
                                     self.board.set_sfen(sfen)
                                 except Exception as e:
-                                    print(f"info string Failed to parse sfen: {e}")
+                                    logging.error(f"Failed to parse sfen: {sfen}")
+                                    logging.error(traceback.format_exc())
                                 moves_start = 6
                             else:
                                 continue
@@ -69,7 +89,8 @@ class USIEngine:
                                 try:
                                     self.board.push_usi(move_str)
                                 except Exception as e:
-                                    print(f"info string Failed to push move {move_str}: {e}")
+                                    logging.error(f"Failed to push move {move_str}")
+                                    logging.error(traceback.format_exc())
 
                 elif cmd == "go":
                     time_limit = 5.0
@@ -94,11 +115,15 @@ class USIEngine:
                                 byoyomi = int(parts[idx+1])
                                 time_limit = max(time_limit, byoyomi / 1000.0 - 0.2)
 
-                    board_copy = shogi.Board(self.board.sfen())
-                    self.searcher.stop_search = False
+                    try:
+                        board_copy = shogi.Board(self.board.sfen())
+                        self.searcher.stop_search = False
 
-                    self.search_thread = threading.Thread(target=self._search_task, args=(board_copy, time_limit))
-                    self.search_thread.start()
+                        self.search_thread = threading.Thread(target=self._search_task, args=(board_copy, time_limit))
+                        self.search_thread.start()
+                    except Exception as e:
+                        logging.error("Failed to copy board state or start search thread")
+                        logging.error(traceback.format_exc())
 
                 elif cmd == "stop":
                     self.searcher.stop_search = True
@@ -111,9 +136,13 @@ class USIEngine:
                         self.search_thread.join()
                     break
             except Exception as e:
-                print(f"info string error: {e}")
-                sys.stdout.flush()
+                logging.error(f"Error in main loop: {e}")
+                logging.error(traceback.format_exc())
 
 if __name__ == "__main__":
-    engine = USIEngine()
-    engine.run()
+    try:
+        engine = USIEngine()
+        engine.run()
+    except Exception as e:
+        logging.critical("Fatal error starting engine")
+        logging.critical(traceback.format_exc())
